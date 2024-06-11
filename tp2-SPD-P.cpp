@@ -8,9 +8,9 @@
 #include <ctime>
 #include <chrono>
 
-#define NUM_CITIES 1000  // Número de ciudades
-#define POP_SIZE 1000  // Tamaño de la población
-#define NUM_GENERATIONS 1000  // Número de generaciones
+#define NUM_CITIES 100  // Número de ciudades
+#define POP_SIZE 10  // Tamaño de la población
+#define NUM_GENERATIONS 100  // Número de generaciones
 #define MUTATION_RATE 0.1  // Tasa de mutación
 
 int cities[NUM_CITIES][NUM_CITIES];
@@ -179,25 +179,29 @@ int main(int argc, char** argv) {
         }
     }
 
-    // Reducir para encontrar el mejor individuo global
-    Individual global_best_individual;
-    MPI_Reduce(&local_best_individual.cost, &global_best_individual.cost, 1, MPI_INT, MPI_MIN, 0, MPI_COMM_WORLD);
+    // Recolectar el mejor individuo global
+    int local_best_cost = local_best_individual.cost;
+    int global_best_cost;
+    MPI_Allreduce(&local_best_cost, &global_best_cost, 1, MPI_INT, MPI_MIN, MPI_COMM_WORLD);
 
-    // Encontrar el camino asociado al mejor costo global
+    // Encontrar y comunicar el camino correspondiente al mejor costo global
+    if (local_best_cost == global_best_cost) {
+        MPI_Gather(local_best_individual.path.data(), NUM_CITIES, MPI_INT,
+                   global_best_individual.path.data(), NUM_CITIES, MPI_INT,
+                   0, MPI_COMM_WORLD);
+    } else {
+        MPI_Gather(NULL, NUM_CITIES, MPI_INT,
+                   global_best_individual.path.data(), NUM_CITIES, MPI_INT,
+                   0, MPI_COMM_WORLD);
+    }
+
+    // Medición del tiempo de ejecución
     if (rank == 0) {
-        for (const auto& ind : population) {
-            if (ind.cost == global_best_individual.cost) {
-                global_best_individual.path = ind.path;
-                break;
-            }
-        }
-
-        // Medición del tiempo de ejecución
         auto end_time = std::chrono::steady_clock::now();
         auto elapsed_time = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
 
         // Imprimir resultados
-        std::cout << "Mejor individuo (costo): " << global_best_individual.cost << "\n";
+        std::cout << "Mejor individuo (costo): " << global_best_cost << "\n";
         std::cout << "Camino: ";
         for (int city : global_best_individual.path) {
             std::cout << city << " ";
