@@ -1,3 +1,4 @@
+#include <mpi.h>
 #include <omp.h>
 #include <iostream>
 #include <vector>
@@ -129,9 +130,25 @@ void generate_random_cities() {
     }
 }
 
-int main() {
-    srand(time(0));
-    generate_random_cities();
+int main(int argc, char** argv) {
+    MPI_Init(&argc, &argv);
+    
+    int rank, size;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+
+    char processor_name[MPI_MAX_PROCESSOR_NAME];
+    int name_len;
+    MPI_Get_processor_name(processor_name, &name_len);
+
+    srand(time(0) + rank);  // Semilla aleatoria basada en el rango para variar entre procesos
+
+    if (rank == 0) {
+        generate_random_cities();
+    }
+
+    // Broadcast de las ciudades generadas
+    MPI_Bcast(&cities, NUM_CITIES * NUM_CITIES, MPI_INT, 0, MPI_COMM_WORLD);
 
     // Inicialización de la población
     initialize_population();
@@ -154,28 +171,43 @@ int main() {
         population = select_new_generation(population, costs);
     }
 
-    // Medición del tiempo de ejecución
-    auto end_time = std::chrono::steady_clock::now();
-    auto elapsed_time = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
-
-    // Encontrar el individuo con menor costo
-    Individual best_individual = population[0];
+    // Recolectar los mejores individuos de cada proceso
+    Individual local_best_individual = population[0];
     for (const auto& ind : population) {
-        if (ind.cost < best_individual.cost) {
-            best_individual = ind;
+        if (ind.cost < local_best_individual.cost) {
+            local_best_individual = ind;
         }
     }
 
-    // Imprimir resultados
-    std::cout << "Mejor individuo (costo): " << best_individual.cost << "\n";
-    std::cout << "Camino: ";
-    for (int city : best_individual.path) {
-        std::cout << city << " ";
+    // Reducir para encontrar el mejor individuo global
+    Individual global_best_individual;
+    MPI_Reduce(&local_best_individual.cost, &global_best_individual.cost, 1, MPI_INT, MPI_MIN, 0, MPI_COMM_WORLD);
+
+    // Encontrar el camino asociado al mejor costo global
+    if (rank == 0) {
+        for (const auto& ind : population) {
+            if (ind.cost == global_best_individual.cost) {
+                global_best_individual.path = ind.path;
+                break;
+            }
+        }
+
+        // Medición del tiempo de ejecución
+        auto end_time = std::chrono::steady_clock::now();
+        auto elapsed_time = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
+
+        // Imprimir resultados
+        std::cout << "Mejor individuo (costo): " << global_best_individual.cost << "\n";
+        std::cout << "Camino: ";
+        for (int city : global_best_individual.path) {
+            std::cout << city << " ";
+        }
+        std::cout << "\n";
+
+        // Imprimir tiempo de ejecución
+        std::cout << "Tiempo de ejecución: " << elapsed_time << " milisegundos\n";
     }
-    std::cout << "\n";
 
-    // Imprimir tiempo de ejecución
-    std::cout << "Tiempo de ejecución: " << elapsed_time << " milisegundos\n";
-
+    MPI_Finalize();
     return 0;
 }
