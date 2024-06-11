@@ -120,7 +120,7 @@ std::vector<Individual> select_new_generation(const std::vector<Individual>& pop
 // Función para generar distancias aleatorias entre ciudades
 void generate_random_cities() {
     for (int i = 0; i < NUM_CITIES; i++) {
-        for (int j = 0; j < NUM_CITIES; j++) {
+        for (int j = 0; i < NUM_CITIES; i++) {
             if (i == j) {
                 cities[i][j] = 0;
             } else {
@@ -136,10 +136,6 @@ int main(int argc, char** argv) {
     int rank, size;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
-
-    char processor_name[MPI_MAX_PROCESSOR_NAME];
-    int name_len;
-    MPI_Get_processor_name(processor_name, &name_len);
 
     srand(time(0) + rank);  // Semilla aleatoria basada en el rango para variar entre procesos
 
@@ -185,6 +181,11 @@ int main(int argc, char** argv) {
     MPI_Allreduce(&local_best_cost, &global_best_cost, 1, MPI_INT, MPI_MIN, MPI_COMM_WORLD);
 
     // Encontrar y comunicar el camino correspondiente al mejor costo global
+    Individual global_best_individual;
+    if (rank == 0) {
+        global_best_individual.path.resize(NUM_CITIES);
+    }
+
     if (local_best_cost == global_best_cost) {
         MPI_Gather(local_best_individual.path.data(), NUM_CITIES, MPI_INT,
                    global_best_individual.path.data(), NUM_CITIES, MPI_INT,
