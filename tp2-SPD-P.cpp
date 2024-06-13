@@ -7,25 +7,25 @@
 #include <chrono>
 #include <algorithm> // Para std::shuffle
 #include <random>    // Para std::default_random_engine
+#include <cstring>   // Para std::strcmp
 
-#define NUM_CITIES 10
-#define POPULATION_SIZE 100
+int NUM_CITIES = 10;
+int POPULATION_SIZE = 100;
+double MUTATION_RATE = 0.01;
 
 struct Individual {
     int cost;
     std::vector<int> path;
 
-    // Para la comunicación MPI, necesitamos un constructor por defecto
     Individual() : cost(0), path(NUM_CITIES) {}
-
-    // Constructor para inicializar con valores
     Individual(int cost, std::vector<int> path) : cost(cost), path(path) {}
 };
 
-std::vector<std::vector<int>> cities(NUM_CITIES, std::vector<int>(NUM_CITIES));
-std::vector<Individual> population(POPULATION_SIZE);
+std::vector<std::vector<int>> cities;
+std::vector<Individual> population;
 
 void generate_random_cities() {
+    cities.resize(NUM_CITIES, std::vector<int>(NUM_CITIES));
     for (int i = 0; i < NUM_CITIES; ++i) {
         for (int j = 0; j < NUM_CITIES; ++j) {
             if (i != j) {
@@ -38,6 +38,7 @@ void generate_random_cities() {
 }
 
 void initialize_population() {
+    population.resize(POPULATION_SIZE);
     unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
     std::default_random_engine rng(seed);
 
@@ -64,9 +65,16 @@ int main(int argc, char** argv) {
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 
-    char processor_name[MPI_MAX_PROCESSOR_NAME];
-    int name_len;
-    MPI_Get_processor_name(processor_name, &name_len);
+    // Parse command-line arguments
+    if (argc > 1) {
+        for (int i = 1; i < argc; ++i) {
+            if (std::strcmp(argv[i], "--population") == 0 && i + 1 < argc) {
+                POPULATION_SIZE = std::atoi(argv[++i]);
+            } else if (std::strcmp(argv[i], "--mutation") == 0 && i + 1 < argc) {
+                MUTATION_RATE = std::atof(argv[++i]);
+            }
+        }
+    }
 
     srand(time(0) + rank);  // Semilla aleatoria basada en el rango para variar entre procesos
 
@@ -101,34 +109,29 @@ int main(int argc, char** argv) {
     }
 
     // Recoger todos los mejores individuos locales en el proceso 0
-    std::vector<Individual> all_best_individuals(size);
+    std::vector<int> all_best_costs(size);
+    MPI_Gather(&local_best_individual.cost, 1, MPI_INT, all_best_costs.data(), 1, MPI_INT, 0, MPI_COMM_WORLD);
 
-    // Para simplificar la comunicación de MPI, enviaremos primero los costos y luego los caminos
     std::vector<int> local_best_path = local_best_individual.path;
-    std::vector<int> global_best_path(NUM_CITIES);
+    std::vector<int> all_best_paths(size * NUM_CITIES);
 
-    // Recoger los costos de los mejores individuos locales
-    std::vector<int> local_best_costs(size);
-    MPI_Gather(&local_best_individual.cost, 1, MPI_INT, local_best_costs.data(), 1, MPI_INT, 0, MPI_COMM_WORLD);
-
-    // Recoger los caminos de los mejores individuos locales
-    MPI_Gather(local_best_path.data(), NUM_CITIES, MPI_INT, global_best_path.data(), NUM_CITIES, MPI_INT, 0, MPI_COMM_WORLD);
+    MPI_Gather(local_best_path.data(), NUM_CITIES, MPI_INT, all_best_paths.data(), NUM_CITIES, MPI_INT, 0, MPI_COMM_WORLD);
 
     // Encontrar el mejor individuo global en el proceso 0
     Individual global_best_individual;
     if (rank == 0) {
-        int min_cost = local_best_costs[0];
+        int min_cost = all_best_costs[0];
         int min_index = 0;
 
         for (int i = 1; i < size; ++i) {
-            if (local_best_costs[i] < min_cost) {
-                min_cost = local_best_costs[i];
+            if (all_best_costs[i] < min_cost) {
+                min_cost = all_best_costs[i];
                 min_index = i;
             }
         }
 
         global_best_individual.cost = min_cost;
-        global_best_individual.path.assign(global_best_path.begin() + min_index * NUM_CITIES, global_best_path.begin() + (min_index + 1) * NUM_CITIES);
+        global_best_individual.path.assign(all_best_paths.begin() + min_index * NUM_CITIES, all_best_paths.begin() + (min_index + 1) * NUM_CITIES);
 
         // Medición del tiempo de ejecución
         auto end_time = std::chrono::steady_clock::now();
