@@ -44,13 +44,23 @@ void initialize_population() {
             population[i].path[j] = j;
         }
         std::shuffle(population[i].path.begin(), population[i].path.end(), rng);
-        population[i].cost = rand() % 1000;  // Ejemplo de costo aleatorio
+        // Asignar un costo inicial (aleatorio para este ejemplo)
+        population[i].cost = rand() % 1000;
     }
 }
 
 int evaluate_cost(const Individual& individual) {
-    // Simula una función para evaluar el costo de un individuo (en este caso simplemente devuelve el costo almacenado)
-    return individual.cost;
+    // Simular una función para evaluar el costo de un individuo (por ejemplo, el costo basado en las ciudades)
+    int total_cost = 0;
+    const std::vector<int>& path = individual.path;
+    for (int i = 0; i < path.size() - 1; ++i) {
+        int city_from = path[i];
+        int city_to = path[i + 1];
+        total_cost += cities[city_from][city_to];
+    }
+    // Agregar el costo de regreso al origen
+    total_cost += cities[path.back()][path.front()];
+    return total_cost;
 }
 
 std::vector<Individual> select_new_generation(const std::vector<Individual>& population, const std::vector<int>& costs) {
