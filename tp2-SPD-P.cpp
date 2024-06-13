@@ -44,22 +44,19 @@ void initialize_population() {
             population[i].path[j] = j;
         }
         std::shuffle(population[i].path.begin(), population[i].path.end(), rng);
-        // Asignar un costo inicial (aleatorio para este ejemplo)
-        population[i].cost = rand() % 1000;
+        population[i].cost = evaluate_cost(population[i].path);
     }
 }
 
-int evaluate_cost(const Individual& individual) {
-    // Simular una función para evaluar el costo de un individuo (por ejemplo, el costo basado en las ciudades)
+int evaluate_cost(const std::vector<int>& path) {
     int total_cost = 0;
-    const std::vector<int>& path = individual.path;
-    for (int i = 0; i < path.size() - 1; ++i) {
+    for (int i = 0; i < NUM_CITIES - 1; ++i) {
         int city_from = path[i];
         int city_to = path[i + 1];
         total_cost += cities[city_from][city_to];
     }
-    // Agregar el costo de regreso al origen
-    total_cost += cities[path.back()][path.front()];
+    // Agregar el costo de regreso al inicio
+    total_cost += cities[path[NUM_CITIES - 1]][path[0]];
     return total_cost;
 }
 
@@ -94,14 +91,12 @@ int main(int argc, char** argv) {
     std::vector<int> costs(POPULATION_SIZE);
     #pragma omp parallel for
     for (int i = 0; i < POPULATION_SIZE; ++i) {
-        costs[i] = evaluate_cost(population[i]);
+        costs[i] = evaluate_cost(population[i].path);
     }
 
     // Recolección de resultados parciales de costos usando MPI_Gather
     std::vector<int> all_costs(POPULATION_SIZE * size);
     MPI_Gather(costs.data(), POPULATION_SIZE, MPI_INT, all_costs.data(), POPULATION_SIZE, MPI_INT, 0, MPI_COMM_WORLD);
-
-    // Aquí podría implementarse una técnica adicional de balanceo de carga si fuera necesario
 
     // Ejemplo de cálculo de nueva generación y selección (puede implementarse como se necesite)
     for (int generation = 0; generation < 1000; ++generation) {
