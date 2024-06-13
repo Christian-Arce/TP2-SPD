@@ -22,6 +22,7 @@ struct Individual {
 std::vector<std::vector<int>> cities(NUM_CITIES, std::vector<int>(NUM_CITIES));
 std::vector<Individual> population(POPULATION_SIZE);
 
+// Función para generar ciudades aleatorias
 void generate_random_cities() {
     for (int i = 0; i < NUM_CITIES; ++i) {
         for (int j = 0; j < NUM_CITIES; ++j) {
@@ -34,6 +35,20 @@ void generate_random_cities() {
     }
 }
 
+// Función para evaluar el costo de un camino (ruta)
+int evaluate_cost(const std::vector<int>& path) {
+    int total_cost = 0;
+    for (int i = 0; i < NUM_CITIES - 1; ++i) {
+        int city_from = path[i];
+        int city_to = path[i + 1];
+        total_cost += cities[city_from][city_to];
+    }
+    // Agregar el costo de regreso al inicio
+    total_cost += cities[path[NUM_CITIES - 1]][path[0]];
+    return total_cost;
+}
+
+// Función para inicializar la población de individuos
 void initialize_population() {
     unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
     std::default_random_engine rng(seed);
@@ -48,18 +63,7 @@ void initialize_population() {
     }
 }
 
-int evaluate_cost(const std::vector<int>& path) {
-    int total_cost = 0;
-    for (int i = 0; i < NUM_CITIES - 1; ++i) {
-        int city_from = path[i];
-        int city_to = path[i + 1];
-        total_cost += cities[city_from][city_to];
-    }
-    // Agregar el costo de regreso al inicio
-    total_cost += cities[path[NUM_CITIES - 1]][path[0]];
-    return total_cost;
-}
-
+// Función para seleccionar una nueva generación de individuos (implementación ficticia)
 std::vector<Individual> select_new_generation(const std::vector<Individual>& population, const std::vector<int>& costs) {
     // Implementación del algoritmo de selección
     // Por simplicidad, retornamos la misma población en este ejemplo
@@ -87,7 +91,7 @@ int main(int argc, char** argv) {
     // Inicialización de la población
     initialize_population();
 
-    // División de trabajo entre los hilos de OpenMP para evaluar los costos de los individuos
+    // Ejemplo de cálculo de costos y selección
     std::vector<int> costs(POPULATION_SIZE);
     #pragma omp parallel for
     for (int i = 0; i < POPULATION_SIZE; ++i) {
