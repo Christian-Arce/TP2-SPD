@@ -2,176 +2,90 @@
 #include <omp.h>
 #include <iostream>
 #include <vector>
-#include <algorithm>
-#include <random>
-#include <cmath>
+#include <cstdlib>
 #include <ctime>
 #include <chrono>
+#include <algorithm> // Para std::shuffle
+#include <random>    // Para std::default_random_engine
 
-#define NUM_CITIES 100  // Número de ciudades
-#define POP_SIZE 10    // Tamaño de la población
-#define NUM_GENERATIONS 100  // Número de generaciones
-#define MUTATION_RATE 0.1  // Tasa de mutación
+#define NUM_CITIES 10
+#define POPULATION_SIZE 100
 
-int cities[NUM_CITIES][NUM_CITIES];
-
-typedef struct {
-    std::vector<int> path;
+struct Individual {
     int cost;
-} Individual;
+    std::vector<int> path;
 
-std::vector<Individual> population(POP_SIZE);
-std::vector<Individual> new_population(POP_SIZE);
+    Individual() : cost(0), path(NUM_CITIES) {}
+    Individual(int cost, std::vector<int> path) : cost(cost), path(path) {}
+};
 
-// Función para calcular el costo de un camino
-int calculate_cost(const std::vector<int>& path) {
-    int cost = 0;
-    for (int i = 0; i < NUM_CITIES - 1; i++) {
-        cost += cities[path[i]][path[i + 1]];
-    }
-    cost += cities[path[NUM_CITIES - 1]][path[0]];  // Regresar al punto de partida
-    return cost;
-}
+std::vector<std::vector<int>> cities(NUM_CITIES, std::vector<int>(NUM_CITIES));
+std::vector<Individual> population(POPULATION_SIZE);
 
-// Función para inicializar la población
-void initialize_population() {
-    std::random_device rd;
-    std::mt19937 g(rd());
-    #pragma omp parallel for
-    for (int i = 0; i < POP_SIZE; i++) {
-        population[i].path.resize(NUM_CITIES);
-        std::iota(population[i].path.begin(), population[i].path.end(), 0);  // Inicializa con 0, 1, ..., NUM_CITIES-1
-        std::shuffle(population[i].path.begin(), population[i].path.end(), g);
-        population[i].cost = calculate_cost(population[i].path);
-    }
-}
-
-// Función para seleccionar dos individuos para reproducción (torneo)
-int select_parents(const std::vector<int>& costs) {
-    int tamTorneo = 3;  // Tamaño del torneo
-    int mejor = rand() % POP_SIZE;
-    for (int i = 1; i < tamTorneo; ++i) {
-        int contendor = rand() % POP_SIZE;
-        if (costs[contendor] < costs[mejor]) {
-            mejor = contendor;
-        }
-    }
-    return mejor;
-}
-
-// Función para hacer crossover entre dos padres
-std::vector<int> crossover(const std::vector<int>& parent1, const std::vector<int>& parent2) {
-    int start = rand() % NUM_CITIES;
-    int end = start + rand() % (NUM_CITIES - start);
-    
-    std::vector<int> child(NUM_CITIES);
-    std::vector<bool> visited(NUM_CITIES, false);
-    
-    for (int i = start; i <= end; i++) {
-        child[i] = parent1[i];
-        visited[child[i]] = true;
-    }
-    
-    int pos = 0;
-    for (int i = 0; i < NUM_CITIES; i++) {
-        if (pos == start) pos = end + 1;
-        if (!visited[parent2[i]]) {
-            child[pos++] = parent2[i];
-        }
-    }
-    return child;
-}
-
-// Función para mutar un camino
-void mutate(std::vector<int>& path) {
-    for (int i = 0; i < NUM_CITIES; i++) {
-        if ((double)rand() / RAND_MAX < MUTATION_RATE) {
-            int r = rand() % NUM_CITIES;
-            std::swap(path[i], path[r]);
-        }
-    }
-}
-
-// Función para seleccionar la próxima generación
-std::vector<Individual> select_new_generation(const std::vector<Individual>& population, const std::vector<int>& costs) {
-    std::vector<Individual> new_generation(POP_SIZE);
-    #pragma omp parallel for
-    for (int i = 0; i < POP_SIZE / 2; ++i) {
-        int parent1 = select_parents(costs);
-        int parent2 = select_parents(costs);
-
-        // Cruzar
-        std::vector<int> child1 = crossover(population[parent1].path, population[parent2].path);
-        std::vector<int> child2 = crossover(population[parent2].path, population[parent1].path);
-
-        // Mutar
-        mutate(child1);
-        mutate(child2);
-
-        // Calcular costo
-        new_generation[2*i].path = child1;
-        new_generation[2*i].cost = calculate_cost(child1);
-        new_generation[2*i + 1].path = child2;
-        new_generation[2*i + 1].cost = calculate_cost(child2);
-    }
-    return new_generation;
-}
-
-// Función para generar distancias aleatorias entre ciudades
 void generate_random_cities() {
-    for (int i = 0; i < NUM_CITIES; i++) {
-        for (int j = 0; j < NUM_CITIES; j++) {
-            if (i == j) {
-                cities[i][j] = 0;
+    for (int i = 0; i < NUM_CITIES; ++i) {
+        for (int j = 0; j < NUM_CITIES; ++j) {
+            if (i != j) {
+                cities[i][j] = rand() % 100 + 1;
             } else {
-                cities[i][j] = rand() % 100 + 1;  // Distancias aleatorias entre 1 y 100
+                cities[i][j] = 0;
             }
         }
     }
 }
 
+void initialize_population() {
+    unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
+    std::default_random_engine rng(seed);
+
+    for (int i = 0; i < POPULATION_SIZE; ++i) {
+        population[i].path.resize(NUM_CITIES);
+        for (int j = 0; j < NUM_CITIES; ++j) {
+            population[i].path[j] = j;
+        }
+        std::shuffle(population[i].path.begin(), population[i].path.end(), rng);
+        population[i].cost = rand() % 1000;  // Ejemplo de costo aleatorio
+    }
+}
+
+std::vector<Individual> select_new_generation(const std::vector<Individual>& population, const std::vector<int>& costs) {
+    // Implementación del algoritmo de selección
+    // Por simplicidad, retornamos la misma población en este ejemplo
+    return population;
+}
+
 int main(int argc, char** argv) {
     MPI_Init(&argc, &argv);
-    
+
     int rank, size;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 
-    char processor_name[MPI_MAX_PROCESSOR_NAME];
-    int name_len;
-    MPI_Get_processor_name(processor_name, &name_len);
-
     srand(time(0) + rank);  // Semilla aleatoria basada en el rango para variar entre procesos
+
+    auto start_time = std::chrono::steady_clock::now();
 
     if (rank == 0) {
         generate_random_cities();
     }
 
     // Broadcast de las ciudades generadas
-    MPI_Bcast(&cities, NUM_CITIES * NUM_CITIES, MPI_INT, 0, MPI_COMM_WORLD);
+    MPI_Bcast(&cities[0][0], NUM_CITIES * NUM_CITIES, MPI_INT, 0, MPI_COMM_WORLD);
 
     // Inicialización de la población
     initialize_population();
 
-    // Almacenar los costos de los individuos
-    std::vector<int> costs(POP_SIZE);
+    // Ejemplo de cálculo de costos y selección
+    std::vector<int> costs(POPULATION_SIZE);
+    for (int i = 0; i < POPULATION_SIZE; ++i) {
+        costs[i] = population[i].cost;
+    }
 
-    // Medición del tiempo de ejecución
-    auto start_time = std::chrono::steady_clock::now();
-
-    // Bucle principal del algoritmo genético
-    for (int generation = 0; generation < NUM_GENERATIONS; ++generation) {
-        // Evaluación de costos
-        #pragma omp parallel for
-        for (int i = 0; i < POP_SIZE; ++i) {
-            costs[i] = population[i].cost;
-        }
-
-        // Selección de la próxima generación
+    for (int generation = 0; generation < 1000; ++generation) {
         population = select_new_generation(population, costs);
     }
 
-    // Recolectar los mejores individuos de cada proceso
+    // Encontrar el mejor individuo local
     Individual local_best_individual = population[0];
     for (const auto& ind : population) {
         if (ind.cost < local_best_individual.cost) {
@@ -179,21 +93,30 @@ int main(int argc, char** argv) {
         }
     }
 
-    // Reducir para encontrar el mejor individuo global
+    // Recoger todos los mejores individuos locales en el proceso 0
+    std::vector<int> all_best_costs(size);
+    MPI_Gather(&local_best_individual.cost, 1, MPI_INT, all_best_costs.data(), 1, MPI_INT, 0, MPI_COMM_WORLD);
+
+    std::vector<int> local_best_path = local_best_individual.path;
+    std::vector<int> all_best_paths(size * NUM_CITIES);
+
+    MPI_Gather(local_best_path.data(), NUM_CITIES, MPI_INT, all_best_paths.data(), NUM_CITIES, MPI_INT, 0, MPI_COMM_WORLD);
+
+    // Encontrar el mejor individuo global en el proceso 0
     Individual global_best_individual;
-    MPI_Reduce(&local_best_individual.cost, &global_best_individual.cost, 1, MPI_INT, MPI_MIN, 0, MPI_COMM_WORLD);
-
-    // Recolectar el mejor camino global
     if (rank == 0) {
-        // Inicializar con un costo alto para asegurar que se actualice correctamente
-        global_best_individual.cost = INT_MAX;
+        int min_cost = all_best_costs[0];
+        int min_index = 0;
 
-        for (const auto& ind : population) {
-            if (ind.cost == global_best_individual.cost) {
-                global_best_individual.path = ind.path;
-                break;
+        for (int i = 1; i < size; ++i) {
+            if (all_best_costs[i] < min_cost) {
+                min_cost = all_best_costs[i];
+                min_index = i;
             }
         }
+
+        global_best_individual.cost = min_cost;
+        global_best_individual.path.assign(all_best_paths.begin() + min_index * NUM_CITIES, all_best_paths.begin() + (min_index + 1) * NUM_CITIES);
 
         // Medición del tiempo de ejecución
         auto end_time = std::chrono::steady_clock::now();
