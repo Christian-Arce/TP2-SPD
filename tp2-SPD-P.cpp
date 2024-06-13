@@ -7,10 +7,9 @@
 #include <cmath>
 #include <ctime>
 #include <chrono>
-#include <limits>
 
 #define NUM_CITIES 100  // Número de ciudades
-#define POP_SIZE 10  // Tamaño de la población
+#define POP_SIZE 10    // Tamaño de la población
 #define NUM_GENERATIONS 100  // Número de generaciones
 #define MUTATION_RATE 0.1  // Tasa de mutación
 
@@ -182,17 +181,16 @@ int main(int argc, char** argv) {
 
     // Reducir para encontrar el mejor individuo global
     Individual global_best_individual;
-
     MPI_Reduce(&local_best_individual.cost, &global_best_individual.cost, 1, MPI_INT, MPI_MIN, 0, MPI_COMM_WORLD);
 
+    // Recolectar el mejor camino global
     if (rank == 0) {
-        // Inicializa global_best_individual con valores iniciales
-        global_best_individual.cost = std::numeric_limits<int>::max();
+        // Inicializar con un costo alto para asegurar que se actualice correctamente
+        global_best_individual.cost = INT_MAX;
 
-        // Encontrar el camino asociado al mejor costo global
         for (const auto& ind : population) {
             if (ind.cost == global_best_individual.cost) {
-                global_best_individual = ind;
+                global_best_individual.path = ind.path;
                 break;
             }
         }
