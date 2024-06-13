@@ -48,6 +48,11 @@ void initialize_population() {
     }
 }
 
+int evaluate_cost(const Individual& individual) {
+    // Simula una función para evaluar el costo de un individuo (en este caso simplemente devuelve el costo almacenado)
+    return individual.cost;
+}
+
 std::vector<Individual> select_new_generation(const std::vector<Individual>& population, const std::vector<int>& costs) {
     // Implementación del algoritmo de selección
     // Por simplicidad, retornamos la misma población en este ejemplo
@@ -75,12 +80,20 @@ int main(int argc, char** argv) {
     // Inicialización de la población
     initialize_population();
 
-    // Ejemplo de cálculo de costos y selección
+    // División de trabajo entre los hilos de OpenMP para evaluar los costos de los individuos
     std::vector<int> costs(POPULATION_SIZE);
+    #pragma omp parallel for
     for (int i = 0; i < POPULATION_SIZE; ++i) {
-        costs[i] = population[i].cost;
+        costs[i] = evaluate_cost(population[i]);
     }
 
+    // Recolección de resultados parciales de costos usando MPI_Gather
+    std::vector<int> all_costs(POPULATION_SIZE * size);
+    MPI_Gather(costs.data(), POPULATION_SIZE, MPI_INT, all_costs.data(), POPULATION_SIZE, MPI_INT, 0, MPI_COMM_WORLD);
+
+    // Aquí podría implementarse una técnica adicional de balanceo de carga si fuera necesario
+
+    // Ejemplo de cálculo de nueva generación y selección (puede implementarse como se necesite)
     for (int generation = 0; generation < 1000; ++generation) {
         population = select_new_generation(population, costs);
     }
