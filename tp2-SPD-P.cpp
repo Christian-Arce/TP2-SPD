@@ -180,16 +180,16 @@ int main(int argc, char** argv) {
     }
 
     // Reducir para encontrar el mejor individuo global
-    int local_best_cost = local_best_individual.cost;
-    int global_best_cost;
+    Individual global_best_individual;
 
-    MPI_Reduce(&local_best_cost, &global_best_cost, 1, MPI_INT, MPI_MIN, 0, MPI_COMM_WORLD);
+    MPI_Reduce(&local_best_individual.cost, &global_best_individual.cost, 1, MPI_INT, MPI_MIN, 0, MPI_COMM_WORLD);
 
     if (rank == 0) {
         // Encontrar el camino asociado al mejor costo global
-        for (int i = 0; i < size; i++) {
-            if (i == rank && local_best_cost == global_best_cost) {
-                global_best_individual.path = local_best_individual.path;
+        for (const auto& ind : population) {
+            if (ind.cost == global_best_individual.cost) {
+                global_best_individual.path = ind.path;
+                break;
             }
         }
 
@@ -198,7 +198,7 @@ int main(int argc, char** argv) {
         auto elapsed_time = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
 
         // Imprimir resultados
-        std::cout << "Mejor individuo (costo): " << global_best_cost << "\n";
+        std::cout << "Mejor individuo (costo): " << global_best_individual.cost << "\n";
         std::cout << "Camino: ";
         for (int city : global_best_individual.path) {
             std::cout << city << " ";
