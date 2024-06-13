@@ -8,9 +8,9 @@
 #include <ctime>
 #include <chrono>
 
-#define NUM_CITIES 1000  // Número de ciudades
-#define POP_SIZE 1000  // Tamaño de la población
-#define NUM_GENERATIONS 1000  // Número de generaciones
+#define NUM_CITIES 100  // Número de ciudades
+#define POP_SIZE 10  // Tamaño de la población
+#define NUM_GENERATIONS 100  // Número de generaciones
 #define MUTATION_RATE 0.1  // Tasa de mutación
 
 int cities[NUM_CITIES][NUM_CITIES];
