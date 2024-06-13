@@ -5,6 +5,8 @@
 #include <cstdlib>
 #include <ctime>
 #include <chrono>
+#include <algorithm> // Para std::shuffle
+#include <random>    // Para std::default_random_engine
 
 #define NUM_CITIES 10
 #define POPULATION_SIZE 100
@@ -12,6 +14,12 @@
 struct Individual {
     int cost;
     std::vector<int> path;
+
+    // Para la comunicación MPI, necesitamos un constructor por defecto
+    Individual() : cost(0), path(NUM_CITIES) {}
+
+    // Constructor para inicializar con valores
+    Individual(int cost, std::vector<int> path) : cost(cost), path(path) {}
 };
 
 std::vector<std::vector<int>> cities(NUM_CITIES, std::vector<int>(NUM_CITIES));
@@ -30,12 +38,15 @@ void generate_random_cities() {
 }
 
 void initialize_population() {
+    unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
+    std::default_random_engine rng(seed);
+
     for (int i = 0; i < POPULATION_SIZE; ++i) {
         population[i].path.resize(NUM_CITIES);
         for (int j = 0; j < NUM_CITIES; ++j) {
             population[i].path[j] = j;
         }
-        std::random_shuffle(population[i].path.begin(), population[i].path.end());
+        std::shuffle(population[i].path.begin(), population[i].path.end(), rng);
         population[i].cost = rand() % 1000;  // Ejemplo de costo aleatorio
     }
 }
@@ -91,17 +102,33 @@ int main(int argc, char** argv) {
 
     // Recoger todos los mejores individuos locales en el proceso 0
     std::vector<Individual> all_best_individuals(size);
-    MPI_Gather(&local_best_individual, sizeof(Individual), MPI_BYTE, &all_best_individuals[0], sizeof(Individual), MPI_BYTE, 0, MPI_COMM_WORLD);
+
+    // Para simplificar la comunicación de MPI, enviaremos primero los costos y luego los caminos
+    std::vector<int> local_best_path = local_best_individual.path;
+    std::vector<int> global_best_path(NUM_CITIES);
+
+    // Recoger los costos de los mejores individuos locales
+    std::vector<int> local_best_costs(size);
+    MPI_Gather(&local_best_individual.cost, 1, MPI_INT, local_best_costs.data(), 1, MPI_INT, 0, MPI_COMM_WORLD);
+
+    // Recoger los caminos de los mejores individuos locales
+    MPI_Gather(local_best_path.data(), NUM_CITIES, MPI_INT, global_best_path.data(), NUM_CITIES, MPI_INT, 0, MPI_COMM_WORLD);
 
     // Encontrar el mejor individuo global en el proceso 0
     Individual global_best_individual;
     if (rank == 0) {
-        global_best_individual = all_best_individuals[0];
-        for (const auto& ind : all_best_individuals) {
-            if (ind.cost < global_best_individual.cost) {
-                global_best_individual = ind;
+        int min_cost = local_best_costs[0];
+        int min_index = 0;
+
+        for (int i = 1; i < size; ++i) {
+            if (local_best_costs[i] < min_cost) {
+                min_cost = local_best_costs[i];
+                min_index = i;
             }
         }
+
+        global_best_individual.cost = min_cost;
+        global_best_individual.path.assign(global_best_path.begin() + min_index * NUM_CITIES, global_best_path.begin() + (min_index + 1) * NUM_CITIES);
 
         // Medición del tiempo de ejecución
         auto end_time = std::chrono::steady_clock::now();
