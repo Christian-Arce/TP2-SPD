@@ -22,12 +22,13 @@ struct Individual {
 std::vector<std::vector<int>> cities(NUM_CITIES, std::vector<int>(NUM_CITIES));
 std::vector<Individual> population(POPULATION_SIZE);
 
-// Función para generar ciudades aleatorias
-void generate_random_cities() {
+// Función para generar ciudades aleatorias de manera determinista
+void generate_random_cities(unsigned seed) {
+    std::srand(seed);  // Usar la semilla proporcionada
     for (int i = 0; i < NUM_CITIES; ++i) {
         for (int j = 0; j < NUM_CITIES; ++j) {
             if (i != j) {
-                cities[i][j] = rand() % 100 + 1;
+                cities[i][j] = std::rand() % 100 + 1;
             } else {
                 cities[i][j] = 0;
             }
@@ -48,9 +49,8 @@ int evaluate_cost(const std::vector<int>& path) {
     return total_cost;
 }
 
-// Función para inicializar la población de individuos
-void initialize_population() {
-    unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
+// Función para inicializar la población de individuos con la misma semilla
+void initialize_population(unsigned seed) {
     std::default_random_engine rng(seed);
 
     #pragma omp parallel for
@@ -83,14 +83,14 @@ int main(int argc, char** argv) {
     auto start_time = std::chrono::steady_clock::now();
 
     if (rank == 0) {
-        generate_random_cities();
+        generate_random_cities(42);  // Generar ciudades aleatorias usando la misma semilla
     }
 
     // Broadcast de las ciudades generadas
     MPI_Bcast(&cities[0][0], NUM_CITIES * NUM_CITIES, MPI_INT, 0, MPI_COMM_WORLD);
 
-    // Inicialización de la población
-    initialize_population();
+    // Inicialización de la población con la misma semilla en todos los procesos
+    initialize_population(42);
 
     // Ejemplo de cálculo de costos y selección
     std::vector<int> costs(POPULATION_SIZE);
