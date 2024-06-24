@@ -16,7 +16,7 @@ struct Individual {
     std::vector<int> path;
 
     Individual() : cost(0), path(NUM_CITIES) {}
-    Individual(int cost, std::vector<int> path) : cost(cost, path) {}
+    Individual(int cost, std::vector<int> path) : cost(cost), path(path) {}
 };
 
 std::vector<std::vector<int>> cities(NUM_CITIES, std::vector<int>(NUM_CITIES));
