@@ -9,8 +9,8 @@
 #include <random>    // Para std::default_random_engine
 #include <climits>
 
-#define NUM_CITIES 100
-#define POPULATION_SIZE 10000  // Incrementar para mayor carga de trabajo
+#define NUM_CITIES 200
+#define POPULATION_SIZE 100000  // Incrementar para mayor carga de trabajo
 
 struct Individual {
     int cost;
@@ -23,9 +23,9 @@ struct Individual {
 std::vector<std::vector<int>> cities(NUM_CITIES, std::vector<int>(NUM_CITIES));
 std::vector<Individual> population(POPULATION_SIZE);
 
-// Función para generar ciudades aleatorias
+// Función para generar ciudades aleatorias de manera determinista
 void generate_random_cities() {
-    std::srand(std::time(nullptr));
+    std::srand(12345);  // Semilla fija para generar ciudades determinísticas
     for (int i = 0; i < NUM_CITIES; ++i) {
         for (int j = 0; j < NUM_CITIES; ++j) {
             if (i != j) {
@@ -51,21 +51,16 @@ int evaluate_cost(const std::vector<int>& path) {
 }
 
 // Función para inicializar la población de individuos
-void initialize_population(unsigned seed) {
-    std::default_random_engine rng(seed);
+void initialize_population() {
+    std::default_random_engine rng(12345);  // Semilla fija para inicialización determinística
 
     #pragma omp parallel for
     for (int i = 0; i < POPULATION_SIZE; ++i) {
-        // Inicializar el camino de cada individuo
         population[i].path.resize(NUM_CITIES);
         for (int j = 0; j < NUM_CITIES; ++j) {
             population[i].path[j] = j;
         }
-        
-        // Barajar el camino de manera aleatoria
         std::shuffle(population[i].path.begin(), population[i].path.end(), rng);
-        
-        // Calcular el costo del individuo
         population[i].cost = evaluate_cost(population[i].path);
     }
 }
@@ -84,20 +79,20 @@ int main(int argc, char** argv) {
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 
-    unsigned seed = 1098;  // Semilla fija para generar ciudades aleatorias
-    std::srand(seed);  // Inicializa la semilla aleatoria
-
     auto start_time = std::chrono::steady_clock::now();
 
     if (rank == 0) {
         generate_random_cities();
+
+        // Broadcast de las ciudades generadas a todos los procesos
+        MPI_Bcast(&cities[0][0], NUM_CITIES * NUM_CITIES, MPI_INT, 0, MPI_COMM_WORLD);
+    } else {
+        // Recibir las ciudades generadas por el proceso 0
+        MPI_Bcast(&cities[0][0], NUM_CITIES * NUM_CITIES, MPI_INT, 0, MPI_COMM_WORLD);
     }
 
-    // Broadcast de las ciudades generadas
-    MPI_Bcast(&cities[0][0], NUM_CITIES * NUM_CITIES, MPI_INT, 0, MPI_COMM_WORLD);
-
-    // Inicialización de la población
-    initialize_population(seed);
+    // Inicialización de la población en todos los procesos
+    initialize_population();
 
     // Ejemplo de cálculo de costos y selección
     std::vector<int> costs(POPULATION_SIZE);
