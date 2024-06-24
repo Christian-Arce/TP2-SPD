@@ -24,8 +24,8 @@ std::vector<std::vector<int>> cities(NUM_CITIES, std::vector<int>(NUM_CITIES));
 std::vector<Individual> population(POPULATION_SIZE);
 
 // Función para generar ciudades aleatorias de manera determinista
-void generate_random_cities() {
-    std::srand(12345);  // Semilla fija para generar ciudades determinísticas
+void generate_random_cities(unsigned seed) {
+    std::srand(seed);  // Usar la semilla proporcionada
     for (int i = 0; i < NUM_CITIES; ++i) {
         for (int j = 0; j < NUM_CITIES; ++j) {
             if (i != j) {
@@ -51,8 +51,8 @@ int evaluate_cost(const std::vector<int>& path) {
 }
 
 // Función para inicializar la población de individuos
-void initialize_population() {
-    std::default_random_engine rng(12345);  // Semilla fija para inicialización determinística
+void initialize_population(unsigned seed) {
+    std::default_random_engine rng(seed);
 
     #pragma omp parallel for
     for (int i = 0; i < POPULATION_SIZE; ++i) {
@@ -79,20 +79,14 @@ int main(int argc, char** argv) {
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 
+    unsigned seed = std::time(nullptr) + rank;  // Semilla única para cada proceso
+
     auto start_time = std::chrono::steady_clock::now();
 
-    if (rank == 0) {
-        generate_random_cities();
-
-        // Broadcast de las ciudades generadas a todos los procesos
-        MPI_Bcast(&cities[0][0], NUM_CITIES * NUM_CITIES, MPI_INT, 0, MPI_COMM_WORLD);
-    } else {
-        // Recibir las ciudades generadas por el proceso 0
-        MPI_Bcast(&cities[0][0], NUM_CITIES * NUM_CITIES, MPI_INT, 0, MPI_COMM_WORLD);
-    }
+    generate_random_cities(seed);  // Generar ciudades aleatorias usando la semilla única
 
     // Inicialización de la población en todos los procesos
-    initialize_population();
+    initialize_population(seed);
 
     // Ejemplo de cálculo de costos y selección
     std::vector<int> costs(POPULATION_SIZE);
