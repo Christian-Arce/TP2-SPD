@@ -9,8 +9,8 @@
 #include <random>    // Para std::default_random_engine
 #include <climits>
 
-#define NUM_CITIES 200
-#define POPULATION_SIZE 100000  // Incrementar para mayor carga de trabajo
+#define NUM_CITIES 100
+#define POPULATION_SIZE 1000  // Incrementar para mayor carga de trabajo
 
 struct Individual {
     int cost;
