@@ -16,7 +16,7 @@ struct Individual {
     std::vector<int> path;
 
     Individual() : cost(0), path(NUM_CITIES) {}
-    Individual(int cost, std::vector<int> path) : cost(cost), path(path) {}
+    Individual(int cost, std::vector<int> path) : cost(cost, path) {}
 };
 
 std::vector<std::vector<int>> cities(NUM_CITIES, std::vector<int>(NUM_CITIES));
@@ -50,7 +50,7 @@ int evaluate_cost(const std::vector<int>& path) {
 
 // Función para inicializar la población de individuos
 void initialize_population() {
-    unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
+    unsigned seed = 42;  // Semilla fija
     std::default_random_engine rng(seed);
 
     #pragma omp parallel for
@@ -78,7 +78,7 @@ int main(int argc, char** argv) {
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 
-    srand(time(0) + rank);  // Semilla aleatoria basada en el rango para variar entre procesos
+    srand(42);  // Semilla fija
 
     auto start_time = std::chrono::steady_clock::now();
 
