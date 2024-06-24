@@ -7,9 +7,8 @@
 #include <chrono>
 #include <algorithm> // Para std::shuffle
 #include <random>    // Para std::default_random_engine
-#include <climits>
 
-#define NUM_CITIES 100
+#define NUM_CITIES 10
 #define POPULATION_SIZE 1000  // Incrementar para mayor carga de trabajo
 
 struct Individual {
@@ -23,13 +22,12 @@ struct Individual {
 std::vector<std::vector<int>> cities(NUM_CITIES, std::vector<int>(NUM_CITIES));
 std::vector<Individual> population(POPULATION_SIZE);
 
-// Función para generar ciudades aleatorias de manera determinista
-void generate_random_cities(unsigned seed) {
-    std::srand(seed);  // Usar la semilla proporcionada
+// Función para generar ciudades aleatorias
+void generate_random_cities() {
     for (int i = 0; i < NUM_CITIES; ++i) {
         for (int j = 0; j < NUM_CITIES; ++j) {
             if (i != j) {
-                cities[i][j] = std::rand() % 100 + 1;
+                cities[i][j] = rand() % 100 + 1;
             } else {
                 cities[i][j] = 0;
             }
@@ -51,7 +49,8 @@ int evaluate_cost(const std::vector<int>& path) {
 }
 
 // Función para inicializar la población de individuos
-void initialize_population(unsigned seed) {
+void initialize_population() {
+    unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
     std::default_random_engine rng(seed);
 
     #pragma omp parallel for
@@ -79,14 +78,19 @@ int main(int argc, char** argv) {
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 
-    unsigned seed = std::time(nullptr) + rank;  // Semilla única para cada proceso
+    srand(42);  // Semilla aleatoria basada en el rango para variar entre procesos
 
     auto start_time = std::chrono::steady_clock::now();
 
-    generate_random_cities(seed);  // Generar ciudades aleatorias usando la semilla única
+    if (rank == 0) {
+        generate_random_cities();
+    }
 
-    // Inicialización de la población en todos los procesos
-    initialize_population(seed);
+    // Broadcast de las ciudades generadas
+    MPI_Bcast(&cities[0][0], NUM_CITIES * NUM_CITIES, MPI_INT, 0, MPI_COMM_WORLD);
+
+    // Inicialización de la población
+    initialize_population();
 
     // Ejemplo de cálculo de costos y selección
     std::vector<int> costs(POPULATION_SIZE);
@@ -98,38 +102,39 @@ int main(int argc, char** argv) {
         population = select_new_generation(population, costs);
     }
 
-    // Encontrar el mejor individuo localmente
-    Individual best_individual = population[0];
-    #pragma omp parallel
-    {
-        Individual local_best_individual = population[0];
-        #pragma omp for
-        for (int i = 0; i < POPULATION_SIZE; ++i) {
-            if (population[i].cost < local_best_individual.cost) {
-                local_best_individual = population[i];
-            }
-        }
-        
-        #pragma omp critical
-        {
-            if (local_best_individual.cost < best_individual.cost) {
-                best_individual = local_best_individual;
-            }
+    // Encontrar el mejor individuo local
+    Individual local_best_individual = population[0];
+    #pragma omp parallel for 
+    for (int i = 0; i < POPULATION_SIZE; ++i) {
+        if (population[i].cost < local_best_individual.cost) {
+            local_best_individual = population[i];
         }
     }
 
-    // Comunicar los mejores individuos locales al proceso 0
-    Individual global_best_individual;
-    MPI_Reduce(&best_individual.cost, &global_best_individual.cost, 1, MPI_INT, MPI_MIN, 0, MPI_COMM_WORLD);
+    // Recoger todos los mejores individuos locales en el proceso 0
+    std::vector<int> all_best_costs(size);
+    MPI_Gather(&local_best_individual.cost, 1, MPI_INT, all_best_costs.data(), 1, MPI_INT, 0, MPI_COMM_WORLD);
 
+    std::vector<int> local_best_path = local_best_individual.path;
+    std::vector<int> all_best_paths(size * NUM_CITIES);
+
+    MPI_Gather(local_best_path.data(), NUM_CITIES, MPI_INT, all_best_paths.data(), NUM_CITIES, MPI_INT, 0, MPI_COMM_WORLD);
+
+    // Encontrar el mejor individuo global en el proceso 0
+    Individual global_best_individual;
     if (rank == 0) {
-        // Encontrar el mejor individuo global
-        for (int i = 0; i < POPULATION_SIZE; ++i) {
-            if (population[i].cost == global_best_individual.cost) {
-                global_best_individual = population[i];
-                break;
+        int min_cost = all_best_costs[0];
+        int min_index = 0;
+
+        for (int i = 1; i < size; ++i) {
+            if (all_best_costs[i] < min_cost) {
+                min_cost = all_best_costs[i];
+                min_index = i;
             }
         }
+
+        global_best_individual.cost = min_cost;
+        global_best_individual.path.assign(all_best_paths.begin() + min_index * NUM_CITIES, all_best_paths.begin() + (min_index + 1) * NUM_CITIES);
 
         // Medición del tiempo de ejecución
         auto end_time = std::chrono::steady_clock::now();
