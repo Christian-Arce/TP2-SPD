@@ -9,8 +9,8 @@
 #include <random>    // Para std::default_random_engine
 #include <climits>
 
-#define NUM_CITIES 100
-#define POPULATION_SIZE 1000  // Incrementar para mayor carga de trabajo
+#define NUM_CITIES 200
+#define POPULATION_SIZE 100000  // Incrementar para mayor carga de trabajo
 
 struct Individual {
     int cost;
@@ -56,11 +56,16 @@ void initialize_population(unsigned seed) {
 
     #pragma omp parallel for
     for (int i = 0; i < POPULATION_SIZE; ++i) {
+        // Inicializar el camino de cada individuo
         population[i].path.resize(NUM_CITIES);
         for (int j = 0; j < NUM_CITIES; ++j) {
             population[i].path[j] = j;
         }
+        
+        // Barajar el camino de manera aleatoria
         std::shuffle(population[i].path.begin(), population[i].path.end(), rng);
+        
+        // Calcular el costo del individuo
         population[i].cost = evaluate_cost(population[i].path);
     }
 }
