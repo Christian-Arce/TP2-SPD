@@ -16,7 +16,16 @@ struct Individual {
     std::vector<int> path;
 
     Individual() : cost(0), path(NUM_CITIES) {}
-    Individual(int cost, std::vector<int> path) : cost(cost), path(path) {}
+    Individual(int cost, const std::vector<int>& path) : cost(cost), path(path) {}
+
+    // Función para combinar dos instancias de Individual (reducción personalizada)
+    static Individual combine(const Individual& a, const Individual& b) {
+        if (a.cost < b.cost) {
+            return a;
+        } else {
+            return b;
+        }
+    }
 };
 
 std::vector<std::vector<int>> cities(NUM_CITIES, std::vector<int>(NUM_CITIES));
@@ -112,29 +121,18 @@ int main(int argc, char** argv) {
     }
 
     // Recoger todos los mejores individuos locales en el proceso 0
-    std::vector<int> all_best_costs(size);
-    MPI_Gather(&local_best_individual.cost, 1, MPI_INT, all_best_costs.data(), 1, MPI_INT, 0, MPI_COMM_WORLD);
-
-    std::vector<int> local_best_path = local_best_individual.path;
-    std::vector<int> all_best_paths(size * NUM_CITIES);
-
-    MPI_Gather(local_best_path.data(), NUM_CITIES, MPI_INT, all_best_paths.data(), NUM_CITIES, MPI_INT, 0, MPI_COMM_WORLD);
+    std::vector<Individual> all_best_individuals(size);
+    MPI_Gather(&local_best_individual, sizeof(Individual), MPI_BYTE, all_best_individuals.data(), sizeof(Individual), MPI_BYTE, 0, MPI_COMM_WORLD);
 
     // Encontrar el mejor individuo global en el proceso 0
     Individual global_best_individual;
     if (rank == 0) {
-        int min_cost = all_best_costs[0];
-        int min_index = 0;
-
+        global_best_individual = all_best_individuals[0];
         for (int i = 1; i < size; ++i) {
-            if (all_best_costs[i] < min_cost) {
-                min_cost = all_best_costs[i];
-                min_index = i;
+            if (all_best_individuals[i].cost < global_best_individual.cost) {
+                global_best_individual = all_best_individuals[i];
             }
         }
-
-        global_best_individual.cost = min_cost;
-        global_best_individual.path.assign(all_best_paths.begin() + min_index * NUM_CITIES, all_best_paths.begin() + (min_index + 1) * NUM_CITIES);
 
         // Medición del tiempo de ejecución
         auto end_time = std::chrono::steady_clock::now();
