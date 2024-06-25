@@ -8,8 +8,11 @@
 #include <algorithm> // Para std::shuffle
 #include <random>    // Para std::default_random_engine
 
-#define NUM_CITIES 10
-#define POPULATION_SIZE 1000  // Incrementar para mayor carga de trabajo
+#define NUM_CITIES 100
+#define POPULATION_SIZE 100  // Incrementar para mayor carga de trabajo
+#define TOURNAMENT_SIZE 20
+#define MUTATION_RATE 0.05
+#define NUM_GENERATIONS 1000  // Número de generaciones
 
 struct Individual {
     int cost;
@@ -53,22 +56,92 @@ int evaluate_cost(const std::vector<int>& path) {
 void initialize_population(unsigned seed) {
     std::default_random_engine rng(seed);
 
-    #pragma omp parallel for
+    #pragma omp parallel for schedule(static)
     for (int i = 0; i < POPULATION_SIZE; ++i) {
-        population[i].path.resize(NUM_CITIES);
+        std::vector<int> path(NUM_CITIES);
         for (int j = 0; j < NUM_CITIES; ++j) {
-            population[i].path[j] = j;
+            path[j] = j;
         }
-        std::shuffle(population[i].path.begin(), population[i].path.end(), rng);
-        population[i].cost = evaluate_cost(population[i].path);
+        std::shuffle(path.begin(), path.end(), rng);
+        population[i] = Individual(evaluate_cost(path), path);
     }
 }
 
-// Función para seleccionar una nueva generación de individuos (implementación ficticia)
-std::vector<Individual> select_new_generation(const std::vector<Individual>& population, const std::vector<int>& costs) {
-    // Implementación del algoritmo de selección
-    // Por simplicidad, retornamos la misma población en este ejemplo
-    return population;
+// Función para seleccionar una nueva generación de individuos usando torneo
+Individual tournament_selection(const std::vector<Individual>& population) {
+    std::default_random_engine rng(std::random_device{}());
+    std::uniform_int_distribution<int> dist(0, POPULATION_SIZE - 1);
+    
+    Individual best = population[dist(rng)];
+    #pragma omp parallel for schedule(static)
+    for (int i = 1; i < TOURNAMENT_SIZE; ++i) {
+        std::uniform_int_distribution<int> local_dist(0, POPULATION_SIZE - 1);
+        Individual contender = population[local_dist(rng)];
+        #pragma omp critical
+        {
+            if (contender.cost < best.cost) {
+                best = contender;
+            }
+        }
+    }
+    return best;
+}
+
+// Función para realizar el cruce (crossover)
+Individual crossover(const Individual& parent1, const Individual& parent2) {
+    std::vector<int> child_path(NUM_CITIES, -1);
+    std::default_random_engine rng(std::random_device{}());
+    std::uniform_int_distribution<int> dist(0, NUM_CITIES - 1);
+    
+    int start = dist(rng);
+    int end = dist(rng);
+    
+    if (start > end) std::swap(start, end);
+
+    for (int i = start; i <= end; ++i) {
+        child_path[i] = parent1.path[i];
+    }
+
+    int current_pos = (end + 1) % NUM_CITIES;
+    for (int i = 0; i < NUM_CITIES; ++i) {
+        int city = parent2.path[i];
+        if (std::find(child_path.begin(), child_path.end(), city) == child_path.end()) {
+            child_path[current_pos] = city;
+            current_pos = (current_pos + 1) % NUM_CITIES;
+        }
+    }
+
+    int cost = evaluate_cost(child_path);
+    return Individual(cost, child_path);
+}
+
+// Función para realizar la mutación
+void mutate(Individual& individual) {
+    std::default_random_engine rng(std::random_device{}());
+    std::uniform_real_distribution<double> mutation_chance(0.0, 1.0);
+    std::uniform_int_distribution<int> dist(0, NUM_CITIES - 1);
+
+    for (int i = 0; i < NUM_CITIES; ++i) {
+        if (mutation_chance(rng) < MUTATION_RATE) {
+            int j = dist(rng);
+            std::swap(individual.path[i], individual.path[j]);
+        }
+    }
+}
+
+// Función para seleccionar una nueva generación de individuos
+std::vector<Individual> select_new_generation(const std::vector<Individual>& population) {
+    std::vector<Individual> new_population(POPULATION_SIZE);
+
+    //#pragma omp parallel for schedule(static)
+    for (int i = 0; i < POPULATION_SIZE; ++i) {
+        Individual parent1 = tournament_selection(population);
+        Individual parent2 = tournament_selection(population);
+        Individual child = crossover(parent1, parent2);
+        mutate(child);
+        new_population[i] = child;
+    }
+    return new_population;
 }
 
 int main(int argc, char** argv) {
@@ -93,21 +166,19 @@ int main(int argc, char** argv) {
     initialize_population(42);
 
     // Ejemplo de cálculo de costos y selección
-    std::vector<int> costs(POPULATION_SIZE);
-    for (int generation = 0; generation < 1000; ++generation) {
-        #pragma omp parallel for
-        for (int i = 0; i < POPULATION_SIZE; ++i) {
-            costs[i] = evaluate_cost(population[i].path);
-        }
-        population = select_new_generation(population, costs);
+    for (int generation = 0; generation < NUM_GENERATIONS; ++generation) {
+        population = select_new_generation(population);
     }
 
     // Encontrar el mejor individuo local
     Individual local_best_individual = population[0];
-    #pragma omp parallel for 
+    //#pragma omp parallel for schedule(static)
     for (int i = 0; i < POPULATION_SIZE; ++i) {
         if (population[i].cost < local_best_individual.cost) {
-            local_best_individual = population[i];
+            //#pragma omp critical
+            if (population[i].cost < local_best_individual.cost) {
+                local_best_individual = population[i];
+            }
         }
     }
 
