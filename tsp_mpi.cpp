@@ -40,11 +40,9 @@ std::vector<int> generateRandomRoute(int numCities) {
         route[i] = i;
     }
 
-    // Create a random device and random engine
     std::random_device rd;
     std::mt19937 g(rd());
 
-    // Shuffle the route using the random engine
     std::shuffle(route.begin(), route.end(), g);
 
     return route;
@@ -107,37 +105,46 @@ int main(int argc, char* argv[]) {
         cout << GREEN + "================================================" + RESET << endl << endl;
     }
 
-
-    // Record the start time
     time_t startTime = time(nullptr);
 
-    ifstream inputFile("/home/christian/tsp-test/Travelling-Salesman-Problem-Using-Genetic-Algorithm/pcb3038.tsp"); // Replace with the actual TSP file name
-    if (!inputFile) {
-        cerr << "Failed to open input file." << endl;
-        MPI_Abort(MPI_COMM_WORLD, 1);
-    }
-
-    string line;
     vector<City> cities;
+    int numCities;
 
-    // Skip lines until the problem data begins
-    while (inputFile >> line) {
-        if (line == "NODE_COORD_SECTION") {
-            break;
+    if (rank == 0) {
+        ifstream inputFile("/home/christian/tsp-test/Travelling-Salesman-Problem-Using-Genetic-Algorithm/pcb3038.tsp"); // Replace with the actual TSP file name
+        if (!inputFile) {
+            cerr << "Failed to open input file." << endl;
+            MPI_Abort(MPI_COMM_WORLD, 1);
         }
+
+        string line;
+
+        while (inputFile >> line) {
+            if (line == "NODE_COORD_SECTION") {
+                break;
+            }
+        }
+
+        while (inputFile >> line) {
+            if (line == "EOF") {
+                break;
+            }
+            City city;
+            inputFile >> city.id >> city.x >> city.y;
+            cities.push_back(city);
+        }
+
+        numCities = cities.size();
     }
 
-    // Read the coordinates from the TSP file
-    while (inputFile >> line) {
-        if (line == "EOF") {
-            break;
-        }
-        City city;
-        inputFile >> city.id >> city.x >> city.y;
-        cities.push_back(city);
+    MPI_Bcast(&numCities, 1, MPI_INT, 0, MPI_COMM_WORLD);
+
+    if (rank != 0) {
+        cities.resize(numCities);
     }
 
-    int numCities = cities.size();
+    MPI_Bcast(cities.data(), numCities * sizeof(City), MPI_BYTE, 0, MPI_COMM_WORLD);
+
     int populationSize = 100;
     int numGenerations = 100;
     double mutationRate = 0.01;
@@ -145,37 +152,44 @@ int main(int argc, char* argv[]) {
     vector<int> bestRoute;
     double bestDistance = numeric_limits<double>::max();
 
-    // Initialize the population
     vector<vector<int>> population(populationSize);
     for (int i = 0; i < populationSize; ++i) {
         population[i] = generateRandomRoute(numCities);
     }
 
-    // Main Genetic Algorithm loop
     for (int generation = 0; generation < numGenerations; ++generation) {
-        vector<pair<int, double>> fitness;
-        for (int i = 0; i < populationSize; ++i) {
-            double distance = calculateTotalDistance(population[i], cities);
-            fitness.push_back(make_pair(i, 1.0 / distance));
+        vector<double> fitness(populationSize);
+        int routesPerProcess = populationSize / numProcesses;
+        int start = rank * routesPerProcess;
+        int end = (rank == numProcesses - 1) ? populationSize : start + routesPerProcess;
+
+        for (int i = start; i < end; ++i) {
+            fitness[i] = 1.0 / calculateTotalDistance(population[i], cities);
         }
 
-        sort(fitness.begin(), fitness.end(), [](const pair<int, double>& a, const pair<int, double>& b) {
+        vector<double> allFitness(populationSize);
+        MPI_Allgather(fitness.data() + start, routesPerProcess, MPI_DOUBLE, allFitness.data(), routesPerProcess, MPI_DOUBLE, MPI_COMM_WORLD);
+
+        vector<pair<int, double>> fitnessPairs(populationSize);
+        for (int i = 0; i < populationSize; ++i) {
+            fitnessPairs[i] = make_pair(i, allFitness[i]);
+        }
+
+        sort(fitnessPairs.begin(), fitnessPairs.end(), [](const pair<int, double>& a, const pair<int, double>& b) {
             return a.second > b.second;
         });
 
         vector<vector<int>> newPopulation(populationSize);
 
-        // Elitism: Keep the best route from the previous generation
-        newPopulation[0] = population[fitness[0].first];
-        if (1.0 / fitness[0].second < bestDistance) {
-            bestRoute = population[fitness[0].first];
-            bestDistance = 1.0 / fitness[0].second;
+        newPopulation[0] = population[fitnessPairs[0].first];
+        if (1.0 / fitnessPairs[0].second < bestDistance) {
+            bestRoute = population[fitnessPairs[0].first];
+            bestDistance = 1.0 / fitnessPairs[0].second;
         }
 
-        // Select parents and create offspring
         for (int i = 1; i < populationSize; ++i) {
-            int parent1 = fitness[i - 1].first;
-            int parent2 = fitness[i].first;
+            int parent1 = fitnessPairs[i - 1].first;
+            int parent2 = fitnessPairs[i].first;
             newPopulation[i] = crossover(population[parent1], population[parent2]);
             mutate(newPopulation[i], mutationRate);
         }
@@ -183,12 +197,10 @@ int main(int argc, char* argv[]) {
         population = newPopulation;
     }
 
-    // Gather all best distances and routes to process 0
     vector<double> allBestDistances(numProcesses);
     MPI_Gather(&bestDistance, 1, MPI_DOUBLE, allBestDistances.data(), 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
 
     if (rank == 0) {
-        // Find the global best route
         int globalBestIndex = distance(allBestDistances.begin(), min_element(allBestDistances.begin(), allBestDistances.end()));
         double globalBestDistance = allBestDistances[globalBestIndex];
 
