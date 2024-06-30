@@ -100,7 +100,7 @@ int main(int argc, char* argv[]) {
     const string GREEN = "\033[32m";
     const string YELLOW = "\033[33m";
     const string RESET = "\033[0m";
-
+    srand(42);
     if (rank == 0) {
         cout << GREEN + "================================================" + RESET << endl;
         cout << GREEN + "           TRAVELING SALESMAN PROBLEM     " + RESET << endl;
