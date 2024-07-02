@@ -34,16 +34,16 @@ double calculateTotalDistance(const vector<int>& route, const vector<City>& citi
     return totalDistance;
 }
 
-std::vector<int> generateRandomRoute(int numCities) {
-    std::vector<int> route(numCities);
+vector<int> generateRandomRoute(int numCities) {
+    vector<int> route(numCities);
     for (int i = 0; i < numCities; ++i) {
         route[i] = i;
     }
 
-    std::random_device rd;
-    std::mt19937 g(rd());
+    random_device rd;
+    mt19937 g(rd());
 
-    std::shuffle(route.begin(), route.end(), g);
+    shuffle(route.begin(), route.end(), g);
 
     return route;
 }
@@ -205,22 +205,35 @@ int main(int argc, char* argv[]) {
 
         // Actualizar la población local para la próxima generación
         population = newPopulation;
+
+        // Periodically share the best route with all processes
+        if (generation % 10 == 0) {
+            double globalBestDistance;
+            MPI_Allreduce(&bestDistance, &globalBestDistance, 1, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD);
+
+            int senderRank = (bestDistance == globalBestDistance) ? rank : 0;
+
+            // Broadcast the best route if it matches the sender's rank or update local best route
+            if (bestDistance != globalBestDistance) {
+                MPI_Bcast(bestRoute.data(), numCities, MPI_INT, senderRank, MPI_COMM_WORLD);
+            }
+        }
     }
 
-    // Recolectar todas las mejores distancias de todos los procesos
+    // Gather all the best distances from all processes
     vector<double> allBestDistances(numProcesses);
     MPI_Gather(&bestDistance, 1, MPI_DOUBLE, allBestDistances.data(), 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
 
-    // Después de MPI_Gather de las mejores distancias, proceso raíz imprime resultados
+    // After MPI_Gather of the best distances, root process prints results
     if (rank == 0) {
-        // Encontrar el índice de la mejor distancia global
+        // Find the index of the global best distance
         int globalBestIndex = distance(allBestDistances.begin(), min_element(allBestDistances.begin(), allBestDistances.end()));
         double globalBestDistance = allBestDistances[globalBestIndex];
 
-        // Actualizar la mejor ruta basada en el mejor índice global
+        // Update the best route based on the global best index
         bestRoute = population[globalBestIndex];
 
-        // Imprimir la mejor ruta y su distancia total
+        // Print the best route and its total distance
         cout << YELLOW + "\nResults:" + RESET << endl;
         cout << LIGHT_BLUE + "Best route:\n";
         for (int city : bestRoute) {
@@ -229,7 +242,7 @@ int main(int argc, char* argv[]) {
         cout << RESET << "\n\n";
         cout << GREEN << "Total distance: " << globalBestDistance << RESET << endl;
 
-        // Calcular y mostrar el tiempo de ejecución
+        // Calculate and display the execution time
         time_t endTime = time(nullptr);
         double duration = difftime(endTime, startTime);
         cout << YELLOW + "Time taken by function: " << duration << " seconds" + RESET << endl;
