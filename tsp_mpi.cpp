@@ -99,6 +99,7 @@ int main(int argc, char* argv[]) {
     const string YELLOW = "\033[33m";
     const string RESET = "\033[0m";
     srand(42);
+
     if (rank == 0) {
         cout << GREEN + "================================================" + RESET << endl;
         cout << GREEN + "           TRAVELING SALESMAN PROBLEM     " + RESET << endl;
@@ -152,63 +153,74 @@ int main(int argc, char* argv[]) {
     vector<int> bestRoute;
     double bestDistance = numeric_limits<double>::max();
 
-    vector<vector<int>> population(populationSize);
-    for (int i = 0; i < populationSize; ++i) {
+    int routesPerProcess = populationSize / numProcesses;
+    vector<vector<int>> population(routesPerProcess, vector<int>(numCities));
+
+    // Inicialización de la población local para cada proceso
+    for (int i = 0; i < routesPerProcess; ++i) {
         population[i] = generateRandomRoute(numCities);
     }
 
     for (int generation = 0; generation < numGenerations; ++generation) {
-        vector<double> fitness(populationSize);
-        int routesPerProcess = populationSize / numProcesses;
-        int start = rank * routesPerProcess;
-        int end = (rank == numProcesses - 1) ? populationSize : start + routesPerProcess;
+        vector<double> fitness(routesPerProcess);
 
-        for (int i = start; i < end; ++i) {
+        // Calcular el fitness para cada individuo en este proceso
+        for (int i = 0; i < routesPerProcess; ++i) {
             fitness[i] = 1.0 / calculateTotalDistance(population[i], cities);
         }
 
         vector<double> allFitness(populationSize);
-        MPI_Allgather(fitness.data() + start, routesPerProcess, MPI_DOUBLE, allFitness.data(), routesPerProcess, MPI_DOUBLE, MPI_COMM_WORLD);
+        MPI_Allgather(fitness.data(), routesPerProcess, MPI_DOUBLE, allFitness.data(), routesPerProcess, MPI_DOUBLE, MPI_COMM_WORLD);
 
-        vector<pair<int, double>> fitnessPairs(populationSize);
-        for (int i = 0; i < populationSize; ++i) {
+        // Crear pares de (índice, fitness) para ordenar
+        vector<pair<int, double>> fitnessPairs(routesPerProcess);
+        for (int i = 0; i < routesPerProcess; ++i) {
             fitnessPairs[i] = make_pair(i, allFitness[i]);
         }
 
+        // Ordenar por fitness descendente
         sort(fitnessPairs.begin(), fitnessPairs.end(), [](const pair<int, double>& a, const pair<int, double>& b) {
             return a.second > b.second;
         });
 
-        vector<vector<int>> newPopulation(populationSize);
+        // Nueva población para la próxima generación
+        vector<vector<int>> newPopulation(routesPerProcess, vector<int>(numCities));
 
+        // Mantener el mejor individuo sin cambios
         newPopulation[0] = population[fitnessPairs[0].first];
+
+        // Actualizar la mejor ruta global si encontramos un nuevo mejor
         if (1.0 / fitnessPairs[0].second < bestDistance) {
             bestRoute = population[fitnessPairs[0].first];
             bestDistance = 1.0 / fitnessPairs[0].second;
         }
 
-        for (int i = 1; i < populationSize; ++i) {
+        // Aplicar crossover y mutación para generar nuevos individuos
+        for (int i = 1; i < routesPerProcess; ++i) {
             int parent1 = fitnessPairs[i - 1].first;
             int parent2 = fitnessPairs[i].first;
             newPopulation[i] = crossover(population[parent1], population[parent2]);
             mutate(newPopulation[i], mutationRate);
         }
 
+        // Actualizar la población local para la próxima generación
         population = newPopulation;
     }
 
+    // Recolectar todas las mejores distancias de todos los procesos
     vector<double> allBestDistances(numProcesses);
     MPI_Gather(&bestDistance, 1, MPI_DOUBLE, allBestDistances.data(), 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
 
-    // Después de MPI_Gather de las mejores distancias
+    // Después de MPI_Gather de las mejores distancias, proceso raíz imprime resultados
     if (rank == 0) {
+        // Encontrar el índice de la mejor distancia global
         int globalBestIndex = distance(allBestDistances.begin(), min_element(allBestDistances.begin(), allBestDistances.end()));
         double globalBestDistance = allBestDistances[globalBestIndex];
 
-        // Actualizar la mejor ruta basada en la mejor distancia global
+        // Actualizar la mejor ruta basada en el mejor índice global
         bestRoute = population[globalBestIndex];
 
-        // Impresión de la mejor ruta y su distancia total
+        // Imprimir la mejor ruta y su distancia total
         cout << YELLOW + "\nResults:" + RESET << endl;
         cout << LIGHT_BLUE + "Best route:\n";
         for (int city : bestRoute) {
@@ -217,6 +229,7 @@ int main(int argc, char* argv[]) {
         cout << RESET << "\n\n";
         cout << GREEN << "Total distance: " << globalBestDistance << RESET << endl;
 
+        // Calcular y mostrar el tiempo de ejecución
         time_t endTime = time(nullptr);
         double duration = difftime(endTime, startTime);
         cout << YELLOW + "Time taken by function: " << duration << " seconds" + RESET << endl;
