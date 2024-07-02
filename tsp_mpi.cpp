@@ -200,10 +200,15 @@ int main(int argc, char* argv[]) {
     vector<double> allBestDistances(numProcesses);
     MPI_Gather(&bestDistance, 1, MPI_DOUBLE, allBestDistances.data(), 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
 
+    // Después de MPI_Gather de las mejores distancias
     if (rank == 0) {
         int globalBestIndex = distance(allBestDistances.begin(), min_element(allBestDistances.begin(), allBestDistances.end()));
         double globalBestDistance = allBestDistances[globalBestIndex];
 
+        // Actualizar la mejor ruta basada en la mejor distancia global
+        bestRoute = population[globalBestIndex];
+
+        // Impresión de la mejor ruta y su distancia total
         cout << YELLOW + "\nResults:" + RESET << endl;
         cout << LIGHT_BLUE + "Best route:\n";
         for (int city : bestRoute) {
