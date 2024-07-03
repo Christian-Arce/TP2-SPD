@@ -103,7 +103,7 @@ int main(int argc, char* argv[]) {
     const string GREEN = "\033[32m";
     const string YELLOW = "\033[33m";
     const string RESET = "\033[0m";
-
+    srand(42);
     if (rank == 0) {
         cout << GREEN + "================================================" + RESET << endl;
         cout << GREEN + "           TRAVELING SALESMAN PROBLEM     " + RESET << endl;
@@ -222,25 +222,41 @@ int main(int argc, char* argv[]) {
 
             printf("Rank %d: localBestDistance = %f, globalBestDistance = %f\n", rank, localBestDistance, globalBestDistance);
 
-    // Determinar senderRank basado en la proceso con la mejor distancia global
+            // Determinar senderRank basado en la proceso con la mejor distancia global
             int senderRank = -1;  // Inicializar con un valor inválido
             if (localBestDistance == globalBestDistance) {
-            senderRank = rank;
-    }
+                senderRank = rank;
+            }
 
-    // Imprimir senderRank en todos los procesos para verificar qué proceso tiene el mejor globalBestDistance
-            printf("Rank %d: senderRank = %d\n", rank, senderRank);
-
-    // Broadcast senderRank a todos los procesos
+            // Broadcast senderRank a todos los procesos
             MPI_Bcast(&senderRank, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
-    // Transmitir la mejor ruta global a todos los procesos si senderRank es válido
+            // Transmitir la mejor ruta global a todos los procesos si senderRank es válido
             if (senderRank == rank && senderRank != -1) {
                 MPI_Bcast(localBestRoute.data(), numCities, MPI_INT, senderRank, MPI_COMM_WORLD);
                 localBestRoute.resize(numCities);
-    }
-}
-    }
+
+            }
+        }
+        if( (generation % 10 == 0)){
+            for (int i = 0; i < routesPerProcess; ++i) {
+                int parent1 = fitnessPairs[i % routesPerProcess].first;  // Usar índices circulares para evitar siempre el mismo cruce
+                int parent2 = fitnessPairs[(i + 1) % routesPerProcess].first;
+
+             // Usar la mejor ruta global si no es el proceso 0
+                if (rank != 0) {
+                    newPopulation[i] = crossover(localBestRoute, population[parent2]); } 
+               else {
+                    newPopulation[i] = crossover(population[parent1], population[parent2]);
+                }
+
+                mutate(newPopulation[i], mutationRate);
+            
+
+            // Actualizar la población local para la próxima generación
+            population = newPopulation;}
+            }
+        }
 
     // Recopilar todas las mejores distancias de todos los procesos
     vector<double> allBestDistances(numProcesses);
