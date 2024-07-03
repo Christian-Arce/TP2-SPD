@@ -15,12 +15,14 @@ struct City {
     double x, y;
 };
 
+// Función para calcular la distancia entre dos ciudades
 double calculateDistance(const City& city1, const City& city2) {
     double dx = city1.x - city2.x;
     double dy = city1.y - city2.y;
     return sqrt(dx * dx + dy * dy);
 }
 
+// Función para calcular la distancia total de una ruta
 double calculateTotalDistance(const vector<int>& route, const vector<City>& cities) {
     double totalDistance = 0.0;
     int numCities = route.size();
@@ -34,6 +36,7 @@ double calculateTotalDistance(const vector<int>& route, const vector<City>& citi
     return totalDistance;
 }
 
+// Función para generar una ruta aleatoria
 vector<int> generateRandomRoute(int numCities) {
     vector<int> route(numCities);
     for (int i = 0; i < numCities; ++i) {
@@ -48,6 +51,7 @@ vector<int> generateRandomRoute(int numCities) {
     return route;
 }
 
+// Función de cruce (crossover) entre dos rutas parentales
 vector<int> crossover(const vector<int>& parent1, const vector<int>& parent2) {
     int numCities = parent1.size();
     vector<int> child(numCities, -1);
@@ -77,6 +81,7 @@ vector<int> crossover(const vector<int>& parent1, const vector<int>& parent2) {
     return child;
 }
 
+// Función de mutación para una ruta
 void mutate(vector<int>& route, double mutationRate) {
     int numCities = route.size();
     for (int i = 0; i < numCities; ++i) {
@@ -98,7 +103,6 @@ int main(int argc, char* argv[]) {
     const string GREEN = "\033[32m";
     const string YELLOW = "\033[33m";
     const string RESET = "\033[0m";
-    srand(42);
 
     if (rank == 0) {
         cout << GREEN + "================================================" + RESET << endl;
@@ -111,8 +115,9 @@ int main(int argc, char* argv[]) {
     vector<City> cities;
     int numCities;
 
+    // El proceso 0 lee los datos de entrada y los transmite a los demás procesos
     if (rank == 0) {
-        ifstream inputFile("/home/christian/tsp-test/Travelling-Salesman-Problem-Using-Genetic-Algorithm/pcb3038.tsp"); // Replace with the actual TSP file name
+        ifstream inputFile("/home/christian/tsp-test/Travelling-Salesman-Problem-Using-Genetic-Algorithm/pcb3038.tsp"); // Reemplaza con el nombre del archivo TSP
         if (!inputFile) {
             cerr << "Failed to open input file." << endl;
             MPI_Abort(MPI_COMM_WORLD, 1);
@@ -138,20 +143,23 @@ int main(int argc, char* argv[]) {
         numCities = cities.size();
     }
 
+    // Transmitir el número de ciudades a todos los procesos
     MPI_Bcast(&numCities, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
+    // Redimensionar el vector de ciudades para los procesos que no sean el 0
     if (rank != 0) {
         cities.resize(numCities);
     }
 
+    // Transmitir los datos de las ciudades a todos los procesos
     MPI_Bcast(cities.data(), numCities * sizeof(City), MPI_BYTE, 0, MPI_COMM_WORLD);
 
     int populationSize = 100;
     int numGenerations = 100;
     double mutationRate = 0.01;
 
-    vector<int> bestRoute;
-    double bestDistance = numeric_limits<double>::max();
+    vector<int> localBestRoute(numCities);
+    double localBestDistance = numeric_limits<double>::max();
 
     int routesPerProcess = populationSize / numProcesses;
     vector<vector<int>> population(routesPerProcess, vector<int>(numCities));
@@ -169,13 +177,14 @@ int main(int argc, char* argv[]) {
             fitness[i] = 1.0 / calculateTotalDistance(population[i], cities);
         }
 
+        // Recopilar los valores de fitness de todos los procesos
         vector<double> allFitness(populationSize);
         MPI_Allgather(fitness.data(), routesPerProcess, MPI_DOUBLE, allFitness.data(), routesPerProcess, MPI_DOUBLE, MPI_COMM_WORLD);
 
         // Crear pares de (índice, fitness) para ordenar
         vector<pair<int, double>> fitnessPairs(routesPerProcess);
         for (int i = 0; i < routesPerProcess; ++i) {
-            fitnessPairs[i] = make_pair(i, allFitness[i]);
+            fitnessPairs[i] = make_pair(i, allFitness[i + rank * routesPerProcess]); // Ajuste de índice para obtener valores correctos
         }
 
         // Ordenar por fitness descendente
@@ -190,9 +199,9 @@ int main(int argc, char* argv[]) {
         newPopulation[0] = population[fitnessPairs[0].first];
 
         // Actualizar la mejor ruta global si encontramos un nuevo mejor
-        if (1.0 / fitnessPairs[0].second < bestDistance) {
-            bestRoute = population[fitnessPairs[0].first];
-            bestDistance = 1.0 / fitnessPairs[0].second;
+        if (1.0 / fitnessPairs[0].second < localBestDistance) {
+            localBestRoute = population[fitnessPairs[0].first];
+            localBestDistance = 1.0 / fitnessPairs[0].second;
         }
 
         // Aplicar crossover y mutación para generar nuevos individuos
@@ -206,43 +215,53 @@ int main(int argc, char* argv[]) {
         // Actualizar la población local para la próxima generación
         population = newPopulation;
 
-        // Periodically share the best route with all processes
+        // Compartir periódicamente la mejor ruta con todos los procesos
         if (generation % 10 == 0) {
             double globalBestDistance;
-            MPI_Allreduce(&bestDistance, &globalBestDistance, 1, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD);
+            MPI_Allreduce(&localBestDistance, &globalBestDistance, 1, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD);
 
-            int senderRank = (bestDistance == globalBestDistance) ? rank : 0;
+            printf("Rank %d: localBestDistance = %f, globalBestDistance = %f\n", rank, localBestDistance, globalBestDistance);
 
-            // Broadcast the best route if it matches the sender's rank or update local best route
-            if (bestDistance != globalBestDistance) {
-                MPI_Bcast(bestRoute.data(), numCities, MPI_INT, senderRank, MPI_COMM_WORLD);
-            }
-        }
+    // Determinar senderRank basado en la proceso con la mejor distancia global
+            int senderRank = -1;  // Inicializar con un valor inválido
+            if (localBestDistance == globalBestDistance) {
+            senderRank = rank;
     }
 
-    // Gather all the best distances from all processes
-    vector<double> allBestDistances(numProcesses);
-    MPI_Gather(&bestDistance, 1, MPI_DOUBLE, allBestDistances.data(), 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+    // Imprimir senderRank en todos los procesos para verificar qué proceso tiene el mejor globalBestDistance
+            printf("Rank %d: senderRank = %d\n", rank, senderRank);
 
-    // After MPI_Gather of the best distances, root process prints results
+    // Broadcast senderRank a todos los procesos
+            MPI_Bcast(&senderRank, 1, MPI_INT, 0, MPI_COMM_WORLD);
+
+    // Transmitir la mejor ruta global a todos los procesos si senderRank es válido
+            if (senderRank == rank && senderRank != -1) {
+                MPI_Bcast(localBestRoute.data(), numCities, MPI_INT, senderRank, MPI_COMM_WORLD);
+                localBestRoute.resize(numCities);
+    }
+}
+    }
+
+    // Recopilar todas las mejores distancias de todos los procesos
+    vector<double> allBestDistances(numProcesses);
+    MPI_Gather(&localBestDistance, 1, MPI_DOUBLE, allBestDistances.data(), 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+
+    // Después de MPI_Gather de las mejores distancias, el proceso raíz imprime los resultados
     if (rank == 0) {
-        // Find the index of the global best distance
+        // Encontrar el índice de la mejor distancia global
         int globalBestIndex = distance(allBestDistances.begin(), min_element(allBestDistances.begin(), allBestDistances.end()));
         double globalBestDistance = allBestDistances[globalBestIndex];
 
-        // Update the best route based on the global best index
-        bestRoute = population[globalBestIndex];
-
-        // Print the best route and its total distance
+        // Imprimir la mejor ruta y su distancia total
         cout << YELLOW + "\nResults:" + RESET << endl;
         cout << LIGHT_BLUE + "Best route:\n";
-        for (int city : bestRoute) {
+        for (int city : localBestRoute) {
             cout << city << " ";
         }
         cout << RESET << "\n\n";
         cout << GREEN << "Total distance: " << globalBestDistance << RESET << endl;
 
-        // Calculate and display the execution time
+        // Calcular y mostrar el tiempo de ejecución
         time_t endTime = time(nullptr);
         double duration = difftime(endTime, startTime);
         cout << YELLOW + "Time taken by function: " << duration << " seconds" + RESET << endl;
