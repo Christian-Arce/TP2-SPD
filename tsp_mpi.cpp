@@ -15,14 +15,14 @@ struct City {
     double x, y;
 };
 
-// Función para calcular la distancia entre dos ciudades
+// Function to calculate the distance between two cities
 double calculateDistance(const City& city1, const City& city2) {
     double dx = city1.x - city2.x;
     double dy = city1.y - city2.y;
     return sqrt(dx * dx + dy * dy);
 }
 
-// Función para calcular la distancia total de una ruta
+// Function to calculate the total distance of a route
 double calculateTotalDistance(const vector<int>& route, const vector<City>& cities) {
     double totalDistance = 0.0;
     int numCities = route.size();
@@ -36,7 +36,7 @@ double calculateTotalDistance(const vector<int>& route, const vector<City>& citi
     return totalDistance;
 }
 
-// Función para generar una ruta aleatoria
+// Function to generate a random route
 vector<int> generateRandomRoute(int numCities) {
     vector<int> route(numCities);
     for (int i = 0; i < numCities; ++i) {
@@ -51,7 +51,7 @@ vector<int> generateRandomRoute(int numCities) {
     return route;
 }
 
-// Función de cruce (crossover) entre dos rutas parentales
+// Crossover function between two parent routes
 vector<int> crossover(const vector<int>& parent1, const vector<int>& parent2) {
     int numCities = parent1.size();
     vector<int> child(numCities, -1);
@@ -81,7 +81,7 @@ vector<int> crossover(const vector<int>& parent1, const vector<int>& parent2) {
     return child;
 }
 
-// Función de mutación para una ruta
+// Mutation function for a route
 void mutate(vector<int>& route, double mutationRate) {
     int numCities = route.size();
     for (int i = 0; i < numCities; ++i) {
@@ -110,21 +110,18 @@ int main(int argc, char* argv[]) {
         cout << GREEN + "================================================" + RESET << endl << endl;
     }
 
-    time_t startTime = time(nullptr);
-
     vector<City> cities;
     int numCities;
 
-    // El proceso 0 lee los datos de entrada y los transmite a los demás procesos
+    // Process 0 reads the input data and broadcasts to other processes
     if (rank == 0) {
-        ifstream inputFile("/home/christian/tsp-test/Travelling-Salesman-Problem-Using-Genetic-Algorithm/pcb3038.tsp"); // Reemplaza con el nombre del archivo TSP
+        ifstream inputFile("/home/christian/tsp-test/Travelling-Salesman-Problem-Using-Genetic-Algorithm/pcb3038.tsp"); // Replace with your TSP file name
         if (!inputFile) {
             cerr << "Failed to open input file." << endl;
             MPI_Abort(MPI_COMM_WORLD, 1);
         }
 
         string line;
-
         while (inputFile >> line) {
             if (line == "NODE_COORD_SECTION") {
                 break;
@@ -143,15 +140,15 @@ int main(int argc, char* argv[]) {
         numCities = cities.size();
     }
 
-    // Transmitir el número de ciudades a todos los procesos
+    // Broadcast the number of cities to all processes
     MPI_Bcast(&numCities, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
-    // Redimensionar el vector de ciudades para los procesos que no sean el 0
+    // Resize the cities vector for non-root processes
     if (rank != 0) {
         cities.resize(numCities);
     }
 
-    // Transmitir los datos de las ciudades a todos los procesos
+    // Broadcast the cities data to all processes
     MPI_Bcast(cities.data(), numCities * sizeof(City), MPI_BYTE, 0, MPI_COMM_WORLD);
 
     int populationSize = 100;
@@ -164,111 +161,111 @@ int main(int argc, char* argv[]) {
     int routesPerProcess = populationSize / numProcesses;
     vector<vector<int>> population(routesPerProcess, vector<int>(numCities));
 
-    // Inicialización de la población local para cada proceso
+    // Initialize the local population for each process
     for (int i = 0; i < routesPerProcess; ++i) {
         population[i] = generateRandomRoute(numCities);
     }
 
+    // Initialize start time
+    time_t startTime = time(nullptr);
+    
     for (int generation = 0; generation < numGenerations; ++generation) {
         vector<double> fitness(routesPerProcess);
 
-        // Calcular el fitness para cada individuo en este proceso
+        // Calculate fitness for each individual in this process
         for (int i = 0; i < routesPerProcess; ++i) {
             fitness[i] = 1.0 / calculateTotalDistance(population[i], cities);
         }
 
-        // Recopilar los valores de fitness de todos los procesos
+        // Gather fitness values from all processes
         vector<double> allFitness(populationSize);
         MPI_Allgather(fitness.data(), routesPerProcess, MPI_DOUBLE, allFitness.data(), routesPerProcess, MPI_DOUBLE, MPI_COMM_WORLD);
 
-        // Crear pares de (índice, fitness) para ordenar
+        // Create pairs of (index, fitness) for sorting
         vector<pair<int, double>> fitnessPairs(routesPerProcess);
         for (int i = 0; i < routesPerProcess; ++i) {
-            fitnessPairs[i] = make_pair(i, allFitness[i + rank * routesPerProcess]); // Ajuste de índice para obtener valores correctos
+            fitnessPairs[i] = make_pair(i, allFitness[i + rank * routesPerProcess]); // Adjust index to get correct values
         }
 
-        // Ordenar por fitness descendente
+        // Sort by fitness in descending order
         sort(fitnessPairs.begin(), fitnessPairs.end(), [](const pair<int, double>& a, const pair<int, double>& b) {
             return a.second > b.second;
         });
 
-        // Nueva población para la próxima generación
+        // New population for the next generation
         vector<vector<int>> newPopulation(routesPerProcess, vector<int>(numCities));
 
-        // Mantener el mejor individuo sin cambios
+        // Keep the best individual unchanged
         newPopulation[0] = population[fitnessPairs[0].first];
 
-        // Actualizar la mejor ruta global si encontramos un nuevo mejor
+        // Update global best route if a new local best is found
         if (1.0 / fitnessPairs[0].second < localBestDistance) {
             localBestRoute = population[fitnessPairs[0].first];
             localBestDistance = 1.0 / fitnessPairs[0].second;
         }
 
-        // Aplicar crossover y mutación para generar nuevos individuos
-        for (int i = 1; i < routesPerProcess; ++i) {
-            int parent1 = fitnessPairs[i - 1].first;
-            int parent2 = fitnessPairs[i].first;
-            newPopulation[i] = crossover(population[parent1], population[parent2]);
-            mutate(newPopulation[i], mutationRate);
-        }
-
-        // Actualizar la población local para la próxima generación
-        population = newPopulation;
-
-        // Compartir periódicamente la mejor ruta con todos los procesos
+        // Periodically share the best route with all processes
         if (generation % 10 == 0) {
             double globalBestDistance;
             MPI_Allreduce(&localBestDistance, &globalBestDistance, 1, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD);
 
             printf("Rank %d: localBestDistance = %f, globalBestDistance = %f\n", rank, localBestDistance, globalBestDistance);
 
-            // Determinar senderRank basado en la proceso con la mejor distancia global
-            int senderRank = -1;  // Inicializar con un valor inválido
+            // Determine senderRank based on the process with the best global distance
+            int senderRank = -1;  // Initialize with an invalid value
             if (localBestDistance == globalBestDistance) {
                 senderRank = rank;
             }
 
-            // Broadcast senderRank a todos los procesos
+            // Broadcast senderRank to all processes
             MPI_Bcast(&senderRank, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
-            // Transmitir la mejor ruta global a todos los procesos si senderRank es válido
+            // Broadcast the best global route to all processes if senderRank is valid
             if (senderRank == rank && senderRank != -1) {
                 MPI_Bcast(localBestRoute.data(), numCities, MPI_INT, senderRank, MPI_COMM_WORLD);
                 localBestRoute.resize(numCities);
-
             }
-        }
-        if( (generation % 10 == 0)){
+
             for (int i = 0; i < routesPerProcess; ++i) {
-                int parent1 = fitnessPairs[i % routesPerProcess].first;  // Usar índices circulares para evitar siempre el mismo cruce
+                int parent1 = fitnessPairs[i % routesPerProcess].first;  // Use circular indices to avoid always the same crossover
                 int parent2 = fitnessPairs[(i + 1) % routesPerProcess].first;
 
-             // Usar la mejor ruta global si no es el proceso 0
+                // Use the best global route if not process 0
                 if (rank != 0) {
-                    newPopulation[i] = crossover(localBestRoute, population[parent2]); } 
-               else {
+                    newPopulation[i] = crossover(localBestRoute, population[parent2]);
+                } else {
                     newPopulation[i] = crossover(population[parent1], population[parent2]);
                 }
 
                 mutate(newPopulation[i], mutationRate);
-            
-
-            // Actualizar la población local para la próxima generación
-            population = newPopulation;}
             }
-        }
 
-    // Recopilar todas las mejores distancias de todos los procesos
+            // Update the local population for the next generation
+            population = newPopulation;
+        } else {
+            // Apply crossover and mutation to generate new individuals
+            for (int i = 1; i < routesPerProcess; ++i) {
+                int parent1 = fitnessPairs[i - 1].first;
+                int parent2 = fitnessPairs[i].first;
+                newPopulation[i] = crossover(population[parent1], population[parent2]);
+                mutate(newPopulation[i], mutationRate);
+            }
+            // Update the local population for the next generation
+            population = newPopulation;
+        }
+    }
+
+    // Gather all best distances from all processes
     vector<double> allBestDistances(numProcesses);
     MPI_Gather(&localBestDistance, 1, MPI_DOUBLE, allBestDistances.data(), 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
 
-    // Después de MPI_Gather de las mejores distancias, el proceso raíz imprime los resultados
+    // After MPI_Gather of the best distances, the root process prints the results
     if (rank == 0) {
-        // Encontrar el índice de la mejor distancia global
+        // Find the index of the best global distance
         int globalBestIndex = distance(allBestDistances.begin(), min_element(allBestDistances.begin(), allBestDistances.end()));
         double globalBestDistance = allBestDistances[globalBestIndex];
 
-        // Imprimir la mejor ruta y su distancia total
+        // Print the best route and its total distance
         cout << YELLOW + "\nResults:" + RESET << endl;
         cout << LIGHT_BLUE + "Best route:\n";
         for (int city : localBestRoute) {
@@ -277,7 +274,7 @@ int main(int argc, char* argv[]) {
         cout << RESET << "\n\n";
         cout << GREEN << "Total distance: " << globalBestDistance << RESET << endl;
 
-        // Calcular y mostrar el tiempo de ejecución
+        // Calculate and display the execution time
         time_t endTime = time(nullptr);
         double duration = difftime(endTime, startTime);
         cout << YELLOW + "Time taken by function: " << duration << " seconds" + RESET << endl;
