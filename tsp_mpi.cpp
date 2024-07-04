@@ -96,6 +96,7 @@ int main(int argc, char* argv[]) {
     MPI_Init(&argc, &argv);
 
     int numProcesses, rank;
+    
     MPI_Comm_size(MPI_COMM_WORLD, &numProcesses);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
@@ -151,7 +152,7 @@ int main(int argc, char* argv[]) {
     // Broadcast the cities data to all processes
     MPI_Bcast(cities.data(), numCities * sizeof(City), MPI_BYTE, 0, MPI_COMM_WORLD);
 
-    int populationSize = 100;
+    int populationSize = 500;
     int numGenerations = 100;
     double mutationRate = 0.01;
 
@@ -207,25 +208,50 @@ int main(int argc, char* argv[]) {
         // Periodically share the best route with all processes
         if (generation % 10 == 0) {
             double globalBestDistance;
+            int senderRank = -1;
             MPI_Allreduce(&localBestDistance, &globalBestDistance, 1, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD);
 
             printf("Rank %d: localBestDistance = %f, globalBestDistance = %f\n", rank, localBestDistance, globalBestDistance);
 
             // Determine senderRank based on the process with the best global distance
-            int senderRank = -1;  // Initialize with an invalid value
+            
             if (localBestDistance == globalBestDistance) {
                 senderRank = rank;
             }
 
-            // Broadcast senderRank to all processes
-            MPI_Bcast(&senderRank, 1, MPI_INT, 0, MPI_COMM_WORLD);
+    // Ensure only one process has the senderRank as its rank
+            MPI_Allreduce(MPI_IN_PLACE, &senderRank, 1, MPI_INT, MPI_MAX, MPI_COMM_WORLD);
 
-            // Broadcast the best global route to all processes if senderRank is valid
-            if (senderRank == rank && senderRank != -1) {
-                MPI_Bcast(localBestRoute.data(), numCities, MPI_INT, senderRank, MPI_COMM_WORLD);
-                localBestRoute.resize(numCities);
-            }
+    // Broadcast the best global route to all processes if senderRank is valid
+            printf("Rank %d: Broadcasting from senderRank %d\n", rank, senderRank);
 
+    // Broadcast the best global route to all processes
+            MPI_Bcast(localBestRoute.data(), numCities, MPI_INT, senderRank, MPI_COMM_WORLD);
+           
+// Declarar una variable para almacenar el resultado combinado de localBestRoute
+            vector<int> combinedBestRoute(numCities);
+
+// Realizar una reducción para combinar localBestRoute de todos los procesos
+            MPI_Reduce(localBestRoute.data(), combinedBestRoute.data(), numCities, MPI_INT, MPI_MIN, 0, MPI_COMM_WORLD);
+
+// Verificar si todos los procesos tienen la misma ruta combinada
+            if (rank == 0) {
+                bool consistent = true;
+                for (int i = 1; i < numProcesses; ++i) {
+        // Comparar combinedBestRoute de todos los procesos con el proceso 0
+                    if (memcmp(combinedBestRoute.data(), localBestRoute.data(), numCities * sizeof(int)) != 0) {
+                        consistent = false;
+                        break;
+        }
+    }
+    
+            if (consistent) {
+                printf("MPI_Reduce successful. All processes have the same localBestRoute.\n");
+    }       else {
+                printf("MPI_Reduce failed. Data inconsistency detected.\n");
+    }
+}           
+   
             for (int i = 0; i < routesPerProcess; ++i) {
                 int parent1 = fitnessPairs[i % routesPerProcess].first;  // Use circular indices to avoid always the same crossover
                 int parent2 = fitnessPairs[(i + 1) % routesPerProcess].first;
