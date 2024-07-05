@@ -170,7 +170,7 @@ int main(int argc, char* argv[]) {
     // Initialize start time
     time_t startTime = time(nullptr);
     
-    for (int generation = 0; generation < numGenerations; ++generation) {
+    for (int generation = 1; generation <= numGenerations; generation++) {
         vector<double> fitness(routesPerProcess);
 
         // Calculate fitness for each individual in this process
@@ -211,7 +211,7 @@ int main(int argc, char* argv[]) {
             int senderRank = -1;
             MPI_Allreduce(&localBestDistance, &globalBestDistance, 1, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD);
 
-            printf("Rank %d: localBestDistance = %f, globalBestDistance = %f\n", rank, localBestDistance, globalBestDistance);
+            printf("Rank %d: localBestDistance = %f, globalBestDistance = %f, generation = %d\n", rank, localBestDistance, globalBestDistance, generation);
 
             // Determine senderRank based on the process with the best global distance
             
@@ -270,7 +270,7 @@ int main(int argc, char* argv[]) {
             population = newPopulation;
         } else {
             // Apply crossover and mutation to generate new individuals
-            for (int i = 1; i < routesPerProcess; ++i) {
+            for (int i = 0; i < routesPerProcess; ++i) {
                 int parent1 = fitnessPairs[i - 1].first;
                 int parent2 = fitnessPairs[i].first;
                 newPopulation[i] = crossover(population[parent1], population[parent2]);
