@@ -171,24 +171,15 @@ int main(int argc, char* argv[]) {
     time_t startTime = time(nullptr);
     
     for (int generation = 1; generation <= numGenerations; generation++) {
-        vector<double> fitness(routesPerProcess);
-
-        // Calculate fitness for each individual in this process
+        //vector<double> fitness(routesPerProcess);
+        // Evaluate fitness for local population
+        vector<pair<int, double>> fitnessPairs;
         for (int i = 0; i < routesPerProcess; ++i) {
-            fitness[i] = 1.0 / calculateTotalDistance(population[i], cities);
+            double distance = calculateTotalDistance(population[i], cities);
+            fitnessPairs.push_back(make_pair(i, 1.0 / distance));
         }
 
-        // Gather fitness values from all processes
-        vector<double> allFitness(populationSize);
-        MPI_Allgather(fitness.data(), routesPerProcess, MPI_DOUBLE, allFitness.data(), routesPerProcess, MPI_DOUBLE, MPI_COMM_WORLD);
-
-        // Create pairs of (index, fitness) for sorting
-        vector<pair<int, double>> fitnessPairs(routesPerProcess);
-        for (int i = 0; i < routesPerProcess; ++i) {
-            fitnessPairs[i] = make_pair(i, allFitness[i + rank * routesPerProcess]); // Adjust index to get correct values
-        }
-
-        // Sort by fitness in descending order
+        // Sort based on fitness
         sort(fitnessPairs.begin(), fitnessPairs.end(), [](const pair<int, double>& a, const pair<int, double>& b) {
             return a.second > b.second;
         });
@@ -253,9 +244,8 @@ int main(int argc, char* argv[]) {
 }           
    
             for (int i = 0; i < routesPerProcess; ++i) {
-                int parent1 = fitnessPairs[i % routesPerProcess].first;  // Use circular indices to avoid always the same crossover
-                int parent2 = fitnessPairs[(i + 1) % routesPerProcess].first;
-
+                int parent1 = fitnessPairs[i - 1].first;  
+                int parent2 = fitnessPairs[i].first;
                 // Use the best global route if not process 0
                 if (rank != 0) {
                     newPopulation[i] = crossover(localBestRoute, population[parent2]);
