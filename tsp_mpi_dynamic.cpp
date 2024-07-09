@@ -205,43 +205,42 @@ int main(int argc, char* argv[]) {
             printf("Rank %d: localBestDistance = %f, globalBestDistance = %f, generation = %d\n", rank, localBestDistance, globalBestDistance, generation);
 
             // Determine senderRank based on the process with the best global distance
-            
             if (localBestDistance == globalBestDistance) {
                 senderRank = rank;
             }
 
-    // Ensure only one process has the senderRank as its rank
+            // Ensure only one process has the senderRank as its rank
             MPI_Allreduce(MPI_IN_PLACE, &senderRank, 1, MPI_INT, MPI_MAX, MPI_COMM_WORLD);
 
-    // Broadcast the best global route to all processes if senderRank is valid
+            // Broadcast the best global route to all processes if senderRank is valid
             printf("Rank %d: Broadcasting from senderRank %d\n", rank, senderRank);
 
-    // Broadcast the best global route to all processes
+            // Broadcast the best global route to all processes
             MPI_Bcast(localBestRoute.data(), numCities, MPI_INT, senderRank, MPI_COMM_WORLD);
            
-// Declarar una variable para almacenar el resultado combinado de localBestRoute
+            // Declare a variable to store the combined result of localBestRoute
             vector<int> combinedBestRoute(numCities);
 
-// Realizar una reducción para combinar localBestRoute de todos los procesos
+            // Perform a reduction to combine localBestRoute from all processes
             MPI_Reduce(localBestRoute.data(), combinedBestRoute.data(), numCities, MPI_INT, MPI_MIN, 0, MPI_COMM_WORLD);
 
-// Verificar si todos los procesos tienen la misma ruta combinada
+            // Check if all processes have the same combined route
             if (rank == 0) {
                 bool consistent = true;
                 for (int i = 1; i < numProcesses; ++i) {
-        // Comparar combinedBestRoute de todos los procesos con el proceso 0
+                    // Compare combinedBestRoute of all processes with process 0
                     if (memcmp(combinedBestRoute.data(), localBestRoute.data(), numCities * sizeof(int)) != 0) {
                         consistent = false;
                         break;
-        }
-    }
+                    }
+                }
     
-            if (consistent) {
-                printf("MPI_Reduce successful. All processes have the same localBestRoute.\n");
-    }       else {
-                printf("MPI_Reduce failed. Data inconsistency detected.\n");
-    }
-}           
+                if (consistent) {
+                    printf("MPI_Reduce successful. All processes have the same localBestRoute.\n");
+                } else {
+                    printf("MPI_Reduce failed. Data inconsistency detected.\n");
+                }
+            }
    
             for (int i = 0; i < routesPerProcess; ++i) {
                 int parent1 = fitnessPairs[rand() % routesPerProcess].first;
