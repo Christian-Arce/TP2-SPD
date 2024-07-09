@@ -14,12 +14,14 @@ struct City {
     double x, y;
 };
 
+// Function to calculate the distance between two cities
 double calculateDistance(const City& city1, const City& city2) {
     double dx = city1.x - city2.x;
     double dy = city1.y - city2.y;
     return sqrt(dx * dx + dy * dy);
 }
 
+// Function to calculate the total distance of a route
 double calculateTotalDistance(const vector<int>& route, const vector<City>& cities) {
     double totalDistance = 0.0;
     int numCities = route.size();
@@ -33,6 +35,7 @@ double calculateTotalDistance(const vector<int>& route, const vector<City>& citi
     return totalDistance;
 }
 
+// Function to generate a random route
 std::vector<int> generateRandomRoute(int numCities) {
     std::vector<int> route(numCities);
     for (int i = 0; i < numCities; ++i) {
@@ -49,6 +52,7 @@ std::vector<int> generateRandomRoute(int numCities) {
     return route;
 }
 
+// Crossover function between two parent routes
 vector<int> crossover(const vector<int>& parent1, const vector<int>& parent2) {
     int numCities = parent1.size();
     vector<int> child(numCities, -1);
@@ -78,6 +82,7 @@ vector<int> crossover(const vector<int>& parent1, const vector<int>& parent2) {
     return child;
 }
 
+// Mutation function for a route
 void mutate(vector<int>& route, double mutationRate) {
     int numCities = route.size();
     for (int i = 0; i < numCities; ++i) {
